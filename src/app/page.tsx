@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type StatusState = "idle" | "checking" | "ok" | "error";
 type Status = {
@@ -41,6 +41,8 @@ export default function Home() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [englishVoice, setEnglishVoice] = useState<string>("");
   const [polishVoice, setPolishVoice] = useState<string>("");
+  const [sourceFileName, setSourceFileName] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const checkConnection = async () => {
     setStatus({ state: "checking", message: "Contacting OpenAI…" });
@@ -239,6 +241,26 @@ export default function Home() {
     console.log("[ui] Translation complete", { totalLines: total, chunks });
   };
 
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = typeof reader.result === "string" ? reader.result : "";
+      setSourceText(text);
+      setTargetText("");
+      setSourceFileName(file.name);
+      setProgress({
+        processed: 0,
+        total: text ? text.split(/\r?\n/).length : 0,
+        chunk: 0,
+        chunks: 0,
+        message: `Loaded ${file.name}`,
+      });
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-black text-zinc-100">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-8 px-6 py-14">
@@ -309,6 +331,27 @@ export default function Home() {
               <div className="flex items-center justify-between text-sm text-zinc-400">
                 <span>Source (English)</span>
                 <span>{sourceText.split(/\r?\n/).filter(Boolean).length} lines</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded bg-emerald-600 px-3 py-1 text-emerald-50 transition hover:bg-emerald-500"
+                >
+                  Upload .srt
+                </button>
+                {sourceFileName && (
+                  <span className="truncate text-zinc-400">
+                    Loaded: {sourceFileName}
+                  </span>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".srt,text/plain"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
               </div>
             <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
               <select
