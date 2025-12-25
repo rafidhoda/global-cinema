@@ -3,14 +3,24 @@
 import { useEffect, useMemo, useState } from "react";
 
 type StatusState = "idle" | "checking" | "ok" | "error";
-
 type Status = {
   state: StatusState;
   message: string;
   detail?: string;
 };
 
-type CopyState = "idle" | "running" | "done" | "error";
+type TranslateState = "idle" | "running" | "done" | "error";
+
+type Progress = {
+  processed: number;
+  total: number;
+  chunk: number;
+  chunks: number;
+  message: string;
+};
+
+const CHUNK_SIZE = 30;
+const ACTIVE_MODEL = process.env.OPENAI_MODEL || "gpt-4.1";
 
 export default function Home() {
   const [status, setStatus] = useState<Status>({
@@ -20,14 +30,17 @@ export default function Home() {
 
   const [sourceText, setSourceText] = useState("");
   const [targetText, setTargetText] = useState("");
-  const [copyState, setCopyState] = useState<CopyState>("idle");
-  const [progress, setProgress] = useState({
+  const [translateState, setTranslateState] = useState<TranslateState>("idle");
+  const [progress, setProgress] = useState<Progress>({
     processed: 0,
     total: 0,
     chunk: 0,
     chunks: 0,
     message: "",
   });
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [englishVoice, setEnglishVoice] = useState<string>("");
+  const [polishVoice, setPolishVoice] = useState<string>("");
 
   const checkConnection = async () => {
     setStatus({ state: "checking", message: "Contacting OpenAI…" });
@@ -60,6 +73,61 @@ export default function Home() {
     checkConnection();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+
+    const preferredNames = {
+      en: [
+        "Google US English",
+        "Google UK English Female",
+        "Google UK English Male",
+        "Microsoft Aria Online (Natural)",
+        "Samantha",
+        "Karen",
+      ],
+      pl: ["Google polski", "Zosia"],
+    };
+
+    const pickBestVoice = (
+      allVoices: SpeechSynthesisVoice[],
+      langPrefix: string,
+      preferred: string[]
+    ) => {
+      for (const name of preferred) {
+        const match = allVoices.find(
+          (v) =>
+            v.name.toLowerCase() === name.toLowerCase() &&
+            v.lang.toLowerCase().startsWith(langPrefix)
+        );
+        if (match) return match;
+      }
+      return (
+        allVoices.find((v) => v.lang.toLowerCase().startsWith(langPrefix)) ||
+        allVoices[0]
+      );
+    };
+
+    const loadVoices = () => {
+      const list = window.speechSynthesis.getVoices();
+      if (!list || list.length === 0) {
+        // some browsers need another tick
+        setTimeout(loadVoices, 150);
+        return;
+      }
+      setVoices(list);
+      const en = pickBestVoice(list, "en", preferredNames.en);
+      const pl = pickBestVoice(list, "pl", preferredNames.pl);
+      setEnglishVoice(en?.name || "");
+      setPolishVoice(pl?.name || "");
+    };
+
+    loadVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+    return () => {
+      window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+    };
+  }, []);
+
   const badgeColor = {
     idle: "bg-zinc-700 text-zinc-200",
     checking: "bg-blue-500/20 text-blue-200 ring-1 ring-blue-400/60",
@@ -72,61 +140,103 @@ export default function Home() {
     return Math.min(100, Math.round((progress.processed / progress.total) * 100));
   }, [progress.processed, progress.total]);
 
-  const handleCopyInChunks = async () => {
+  const speakText = (text: string, lang: string, voiceName?: string) => {
+    if (typeof window === "undefined" || !text.trim()) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    if (voiceName) {
+      const voice = voices.find((v) => v.name === voiceName);
+      if (voice) utterance.voice = voice;
+    }
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleTranslateInChunks = async () => {
     const lines = sourceText.split(/\r?\n/);
     const total = lines.length;
 
     if (total === 0) {
-      setCopyState("error");
+      console.error("[ui] No source lines to translate");
+      setTranslateState("error");
       setProgress((prev) => ({
         ...prev,
         processed: 0,
         total: 0,
         chunk: 0,
         chunks: 0,
-        message: "Paste subtitle text on the left before processing.",
+        message: "Paste subtitle text on the left before translating.",
       }));
       return;
     }
 
-    const chunkSize = 100;
-    const chunks = Math.max(1, Math.ceil(total / chunkSize));
+    const chunks = Math.max(1, Math.ceil(total / CHUNK_SIZE));
 
-    setCopyState("running");
+    setTranslateState("running");
     setProgress({
       processed: 0,
       total,
       chunk: 0,
       chunks,
-      message: "Starting chunked copy…",
+      message: "Starting translation in 100-line batches…",
     });
     setTargetText("");
 
     const buffer: string[] = [];
 
     for (let i = 0; i < chunks; i += 1) {
-      const slice = lines.slice(i * chunkSize, (i + 1) * chunkSize);
-      buffer.push(...slice);
-      setTargetText(buffer.join("\n"));
+      const slice = lines.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
 
-      const processed = Math.min((i + 1) * chunkSize, total);
-      setProgress({
-        processed,
-        total,
-        chunk: i + 1,
-        chunks,
-        message: `Copied chunk ${i + 1} of ${chunks} (${processed}/${total} lines)`,
-      });
+      try {
+        const response = await fetch("/api/translate-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lines: slice }),
+        });
+        const data = await response.json();
 
-      // Small pause so progress is visible; adjust or remove as needed.
+        if (!response.ok || !data.ok || !Array.isArray(data.lines)) {
+          console.error("[ui] Translation API error", {
+            status: response.status,
+            body: data,
+          });
+          throw new Error(data?.error ?? "Translation failed");
+        }
+
+        buffer.push(...data.lines);
+        setTargetText(buffer.join("\n"));
+
+        const processed = Math.min((i + 1) * CHUNK_SIZE, total);
+        setProgress({
+          processed,
+          total,
+          chunk: i + 1,
+          chunks,
+          message: `Translated chunk ${i + 1} of ${chunks} (${processed}/${total} lines)`,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to translate chunk.";
+        console.error("[ui] Chunk translation failed", { error, chunk: i + 1 });
+        setTranslateState("error");
+        setProgress((prev) => ({
+          ...prev,
+          message,
+        }));
+        return;
+      }
+
       await new Promise((resolve) => setTimeout(resolve, 60));
     }
 
-    setCopyState("done");
+    setTranslateState("done");
     setProgress((prev) => ({
       ...prev,
-      message: "Completed copy in 100-line batches.",
+      message: "Completed translation in 100-line batches.",
     }));
+    console.log("[ui] Translation complete", { totalLines: total, chunks });
   };
 
   return (
@@ -140,9 +250,8 @@ export default function Home() {
             Subtitle translation workspace
           </h1>
           <p className="max-w-3xl text-lg text-zinc-400">
-            Paste the English subtitles on the left. We&apos;ll move them to the
-            right in 100-line batches so you can translate safely with progress
-            you can trust.
+            Paste English subtitles on the left. We translate to Polish in 100-line batches,
+            preserving the exact SRT structure.
           </p>
         </header>
 
@@ -173,19 +282,19 @@ export default function Home() {
           <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
               <h2 className="text-lg font-semibold text-zinc-100">
-                Chunked copy (100 lines at a time)
+                Translate to Polish (100 lines at a time)
               </h2>
               <p className="text-sm text-zinc-400">
-                We process the left text in batches to keep progress clear and avoid missed lines.
-              </p>
-            </div>
+                Uses OpenAI {ACTIVE_MODEL} with strict line-for-line preservation (indices/timecodes unchanged).
+          </p>
+        </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={handleCopyInChunks}
+                onClick={handleTranslateInChunks}
                 className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
-                disabled={copyState === "running"}
+                disabled={translateState === "running"}
               >
-                {copyState === "running" ? "Copying…" : "Copy in 100-line batches"}
+                {translateState === "running" ? "Translating…" : "Translate 100-line batches"}
               </button>
               <div className="text-sm text-zinc-400">
                 {progress.total > 0
@@ -201,6 +310,30 @@ export default function Home() {
                 <span>Source (English)</span>
                 <span>{sourceText.split(/\r?\n/).filter(Boolean).length} lines</span>
               </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+              <select
+                value={englishVoice}
+                onChange={(e) => setEnglishVoice(e.target.value)}
+                className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100"
+              >
+                {voices
+                  .filter((v) => v.lang.toLowerCase().startsWith("en"))
+                  .map((v) => (
+                    <option key={v.name} value={v.name}>
+                      {v.name} ({v.lang})
+                    </option>
+                  ))}
+                {voices.filter((v) => v.lang.toLowerCase().startsWith("en")).length ===
+                  0 && <option>No English voices found</option>}
+              </select>
+              <button
+                type="button"
+                onClick={() => speakText(sourceText, "en-US", englishVoice)}
+                className="rounded bg-zinc-800 px-3 py-1 text-zinc-200 transition hover:bg-zinc-700"
+              >
+                Read English aloud
+              </button>
+            </div>
               <textarea
                 value={sourceText}
                 onChange={(e) => setSourceText(e.target.value)}
@@ -211,14 +344,38 @@ export default function Home() {
 
             <div className="flex flex-col gap-2 rounded-xl border border-zinc-800/70 bg-zinc-950/70 p-4">
               <div className="flex items-center justify-between text-sm text-zinc-400">
-                <span>Working copy (ready for translation)</span>
+                <span>Polish output (translated)</span>
                 <span>{targetText.split(/\r?\n/).filter(Boolean).length} lines</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                <select
+                  value={polishVoice}
+                  onChange={(e) => setPolishVoice(e.target.value)}
+                  className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100"
+                >
+                  {voices
+                    .filter((v) => v.lang.toLowerCase().startsWith("pl"))
+                    .map((v) => (
+                      <option key={v.name} value={v.name}>
+                        {v.name} ({v.lang})
+                      </option>
+                    ))}
+                  {voices.filter((v) => v.lang.toLowerCase().startsWith("pl"))
+                    .length === 0 && <option>No Polish voices found</option>}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => speakText(targetText, "pl-PL", polishVoice)}
+                  className="rounded bg-zinc-800 px-3 py-1 text-zinc-200 transition hover:bg-zinc-700"
+                >
+                  Read Polish aloud
+                </button>
               </div>
               <textarea
                 value={targetText}
                 onChange={(e) => setTargetText(e.target.value)}
                 className="h-[520px] w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900/80 p-4 font-mono text-sm text-zinc-100 outline-none ring-0 transition focus:border-emerald-500/60 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-                placeholder="After processing, text appears here in 100-line batches."
+                placeholder="Translated text appears here in 100-line batches."
               />
             </div>
           </div>
@@ -243,18 +400,18 @@ export default function Home() {
             {progress.message && (
               <div className="text-sm text-zinc-400">{progress.message}</div>
             )}
-            {copyState === "done" && (
+            {translateState === "done" && (
               <div className="text-sm font-medium text-emerald-300">
-                Done. Text is copied in full. You can translate in the right pane or run again.
+                Translation completed. Polish subtitles are ready on the right.
               </div>
             )}
-            {copyState === "error" && (
+            {translateState === "error" && (
               <div className="text-sm font-medium text-rose-300">
-                Unable to start. Add text on the left and try again.
+                Translation failed. Check the text and try again.
               </div>
             )}
-          </div>
-        </main>
+        </div>
+      </main>
       </div>
     </div>
   );
