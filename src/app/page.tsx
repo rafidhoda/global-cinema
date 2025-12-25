@@ -22,6 +22,21 @@ type Progress = {
 const CHUNK_SIZE = 30;
 const ACTIVE_MODEL = process.env.OPENAI_MODEL || "gpt-4.1";
 
+type TargetLang = {
+  code: string;
+  label: string;
+  voicePrefix: string;
+};
+
+const TARGET_LANGS: TargetLang[] = [
+  { code: "en-US", label: "English", voicePrefix: "en" },
+  { code: "no-NO", label: "Norwegian", voicePrefix: "no" },
+  { code: "pl-PL", label: "Polish", voicePrefix: "pl" },
+  { code: "hi-IN", label: "Hindi", voicePrefix: "hi" },
+  { code: "ar-SA", label: "Arabic", voicePrefix: "ar" },
+  { code: "ur-PK", label: "Urdu", voicePrefix: "ur" },
+];
+
 export default function Home() {
   const [status, setStatus] = useState<Status>({
     state: "idle",
@@ -40,9 +55,10 @@ export default function Home() {
   });
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [englishVoice, setEnglishVoice] = useState<string>("");
-  const [polishVoice, setPolishVoice] = useState<string>("");
+  const [targetVoice, setTargetVoice] = useState<string>("");
   const [sourceFileName, setSourceFileName] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [targetLangCode, setTargetLangCode] = useState<string>(TARGET_LANGS[0].code);
 
   const checkConnection = async () => {
     setStatus({ state: "checking", message: "Contacting OpenAI…" });
@@ -78,7 +94,7 @@ export default function Home() {
   useEffect(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
 
-    const preferredNames = {
+    const preferredNames: Record<string, string[]> = {
       en: [
         "Google US English",
         "Google UK English Female",
@@ -87,7 +103,15 @@ export default function Home() {
         "Samantha",
         "Karen",
       ],
+      no: ["Google norsk"],
       pl: ["Google polski", "Zosia"],
+      hi: ["Google हिन्दी"],
+      ar: ["Google العربية"],
+      ur: ["Google اُردُو"],
+      es: ["Google español", "Google español de Estados Unidos", "Monica"],
+      fr: ["Google français", "Thomas"],
+      de: ["Google Deutsch", "Hans"],
+      it: ["Google italiano", "Alice"],
     };
 
     const pickBestVoice = (
@@ -118,9 +142,12 @@ export default function Home() {
       }
       setVoices(list);
       const en = pickBestVoice(list, "en", preferredNames.en);
-      const pl = pickBestVoice(list, "pl", preferredNames.pl);
+      const targetLang = TARGET_LANGS.find((t) => t.code === targetLangCode);
+      const targetPrefix = targetLang?.voicePrefix || "pl";
+      const targetPrefs = preferredNames[targetPrefix] || [];
+      const tgt = pickBestVoice(list, targetPrefix, targetPrefs);
       setEnglishVoice(en?.name || "");
-      setPolishVoice(pl?.name || "");
+      setTargetVoice(tgt?.name || "");
     };
 
     loadVoices();
@@ -128,7 +155,7 @@ export default function Home() {
     return () => {
       window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
     };
-  }, []);
+  }, [targetLangCode]);
 
   const badgeColor = {
     idle: "bg-zinc-700 text-zinc-200",
@@ -157,6 +184,8 @@ export default function Home() {
   };
 
   const handleTranslateInChunks = async () => {
+    const targetLang =
+      TARGET_LANGS.find((t) => t.code === targetLangCode) ?? TARGET_LANGS[0];
     const lines = sourceText.split(/\r?\n/);
     const total = lines.length;
 
@@ -182,7 +211,7 @@ export default function Home() {
       total,
       chunk: 0,
       chunks,
-      message: "Starting translation in 100-line batches…",
+      message: `Starting translation to ${targetLang.label} in ${CHUNK_SIZE}-line batches…`,
     });
     setTargetText("");
 
@@ -195,7 +224,7 @@ export default function Home() {
         const response = await fetch("/api/translate-batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lines: slice }),
+          body: JSON.stringify({ lines: slice, targetLanguage: targetLang.label }),
         });
         const data = await response.json();
 
@@ -236,7 +265,7 @@ export default function Home() {
     setTranslateState("done");
     setProgress((prev) => ({
       ...prev,
-      message: "Completed translation in 100-line batches.",
+      message: `Completed translation to ${targetLang.label} in ${CHUNK_SIZE}-line batches.`,
     }));
     console.log("[ui] Translation complete", { totalLines: total, chunks });
   };
@@ -272,8 +301,7 @@ export default function Home() {
             Subtitle translation workspace
           </h1>
           <p className="max-w-3xl text-lg text-zinc-400">
-            Paste English subtitles on the left. We translate to Polish in 100-line batches,
-            preserving the exact SRT structure.
+            Paste or upload subtitles on the left. We translate in small batches, preserving the exact SRT structure.
           </p>
         </header>
 
@@ -304,19 +332,35 @@ export default function Home() {
           <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
               <h2 className="text-lg font-semibold text-zinc-100">
-                Translate to Polish (100 lines at a time)
+                Translate in {CHUNK_SIZE}-line batches
               </h2>
               <p className="text-sm text-zinc-400">
                 Uses OpenAI {ACTIVE_MODEL} with strict line-for-line preservation (indices/timecodes unchanged).
-          </p>
-        </div>
-            <div className="flex items-center gap-3">
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-zinc-400">Target:</span>
+                <select
+                  value={targetLangCode}
+                  onChange={(e) => setTargetLangCode(e.target.value)}
+                  className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+                >
+                  {TARGET_LANGS.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <button
                 onClick={handleTranslateInChunks}
                 className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
                 disabled={translateState === "running"}
               >
-                {translateState === "running" ? "Translating…" : "Translate 100-line batches"}
+                {translateState === "running"
+                  ? "Translating…"
+                  : `Translate ${CHUNK_SIZE}-line batches`}
               </button>
               <div className="text-sm text-zinc-400">
                 {progress.total > 0
@@ -387,31 +431,48 @@ export default function Home() {
 
             <div className="flex flex-col gap-2 rounded-xl border border-zinc-800/70 bg-zinc-950/70 p-4">
               <div className="flex items-center justify-between text-sm text-zinc-400">
-                <span>Polish output (translated)</span>
+                <span>Translated output</span>
                 <span>{targetText.split(/\r?\n/).filter(Boolean).length} lines</span>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                 <select
-                  value={polishVoice}
-                  onChange={(e) => setPolishVoice(e.target.value)}
+                  value={targetVoice}
+                  onChange={(e) => setTargetVoice(e.target.value)}
                   className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100"
                 >
                   {voices
-                    .filter((v) => v.lang.toLowerCase().startsWith("pl"))
+                    .filter((v) =>
+                      v.lang.toLowerCase().startsWith(
+                        (TARGET_LANGS.find((t) => t.code === targetLangCode)?.voicePrefix ||
+                          "pl")
+                      )
+                    )
                     .map((v) => (
                       <option key={v.name} value={v.name}>
                         {v.name} ({v.lang})
                       </option>
                     ))}
-                  {voices.filter((v) => v.lang.toLowerCase().startsWith("pl"))
-                    .length === 0 && <option>No Polish voices found</option>}
+                  {voices.filter((v) =>
+                    v.lang
+                      .toLowerCase()
+                      .startsWith(
+                        (TARGET_LANGS.find((t) => t.code === targetLangCode)?.voicePrefix ||
+                          "pl")
+                      )
+                  ).length === 0 && <option>No voices found</option>}
                 </select>
                 <button
                   type="button"
-                  onClick={() => speakText(targetText, "pl-PL", polishVoice)}
+                  onClick={() =>
+                    speakText(
+                      targetText,
+                      targetLangCode,
+                      targetVoice
+                    )
+                  }
                   className="rounded bg-zinc-800 px-3 py-1 text-zinc-200 transition hover:bg-zinc-700"
                 >
-                  Read Polish aloud
+                  Read aloud
                 </button>
               </div>
               <textarea

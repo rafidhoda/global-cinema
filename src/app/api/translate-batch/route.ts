@@ -10,11 +10,12 @@ const openai = new OpenAI({
 
 type TranslateRequest = {
   lines: string[];
+  targetLanguage?: string;
 };
 
 const SYSTEM_PROMPT = `
-You are an expert subtitle translator from English to Polish.
-Movie context: "Dangal" (2016) Bollywood film. Translate naturally (not literal) while preserving story and tone.
+You are an expert subtitle translator.
+Movie context: "Dangal" (2016) Bollywood film. Translate naturally (not literal) while preserving story and tone into the target language.
 Input is an array of raw subtitle lines (SRT-style). Preserve structure exactly:
 - Keep line count identical to input; one output line per input line, same order.
 - If a line is an index, timecode, blank, or contains markup (e.g., <i>…</i>), return it unchanged (verbatim); translate only the dialogue text.
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
   }
 
   const lines = Array.isArray(body.lines) ? body.lines : [];
+  const targetLanguage = body.targetLanguage || "Polish";
   if (lines.length === 0) {
     console.error("[translate-batch] No lines provided");
     return NextResponse.json(
@@ -75,8 +77,7 @@ export async function POST(request: Request) {
           {
             role: "user",
             content: JSON.stringify({
-              instructions:
-                "Translate lines to Polish; preserve indices/timecodes/blank/markup lines verbatim; output JSON with the same number of lines.",
+              instructions: `Translate lines to ${targetLanguage}; preserve indices/timecodes/blank/markup lines verbatim; output JSON with the same number of lines.`,
               expectedCount: chunk.length,
               lines: chunk,
             }),
@@ -155,6 +156,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, lines: result.lines, model });
+  return NextResponse.json({ ok: true, lines: result.lines, model, targetLanguage });
 }
 
