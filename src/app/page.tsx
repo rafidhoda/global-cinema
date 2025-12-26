@@ -25,16 +25,15 @@ const ACTIVE_MODEL = process.env.OPENAI_MODEL || "gpt-4.1";
 type TargetLang = {
   code: string;
   label: string;
-  voicePrefix: string;
 };
 
 const TARGET_LANGS: TargetLang[] = [
-  { code: "en-US", label: "English", voicePrefix: "en" },
-  { code: "no-NO", label: "Norwegian", voicePrefix: "no" },
-  { code: "pl-PL", label: "Polish", voicePrefix: "pl" },
-  { code: "hi-IN", label: "Hindi", voicePrefix: "hi" },
-  { code: "ar-SA", label: "Arabic", voicePrefix: "ar" },
-  { code: "ur-PK", label: "Urdu", voicePrefix: "ur" },
+  { code: "en-US", label: "English" },
+  { code: "no-NO", label: "Norwegian" },
+  { code: "pl-PL", label: "Polish" },
+  { code: "hi-IN", label: "Hindi" },
+  { code: "ar-SA", label: "Arabic" },
+  { code: "ur-PK", label: "Urdu" },
 ];
 
 export default function Home() {
@@ -53,12 +52,20 @@ export default function Home() {
     chunks: 0,
     message: "",
   });
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [englishVoice, setEnglishVoice] = useState<string>("");
-  const [targetVoice, setTargetVoice] = useState<string>("");
   const [sourceFileName, setSourceFileName] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [targetLangCode, setTargetLangCode] = useState<string>(TARGET_LANGS[0].code);
+  const [downloadReady, setDownloadReady] = useState<boolean>(false);
+  const [movieQuery, setMovieQuery] = useState<string>("");
+  const [movieInfo, setMovieInfo] = useState<{
+    title?: string;
+    overview?: string;
+    release_date?: string;
+    poster_path?: string;
+  } | null>(null);
+  const [movieLoading, setMovieLoading] = useState<boolean>(false);
+  const [movieError, setMovieError] = useState<string>("");
+  const [guessLoading, setGuessLoading] = useState<boolean>(false);
 
   const checkConnection = async () => {
     setStatus({ state: "checking", message: "Contacting OpenAI…" });
@@ -91,72 +98,6 @@ export default function Home() {
     checkConnection();
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-
-    const preferredNames: Record<string, string[]> = {
-      en: [
-        "Google US English",
-        "Google UK English Female",
-        "Google UK English Male",
-        "Microsoft Aria Online (Natural)",
-        "Samantha",
-        "Karen",
-      ],
-      no: ["Google norsk"],
-      pl: ["Google polski", "Zosia"],
-      hi: ["Google हिन्दी"],
-      ar: ["Google العربية"],
-      ur: ["Google اُردُو"],
-      es: ["Google español", "Google español de Estados Unidos", "Monica"],
-      fr: ["Google français", "Thomas"],
-      de: ["Google Deutsch", "Hans"],
-      it: ["Google italiano", "Alice"],
-    };
-
-    const pickBestVoice = (
-      allVoices: SpeechSynthesisVoice[],
-      langPrefix: string,
-      preferred: string[]
-    ) => {
-      for (const name of preferred) {
-        const match = allVoices.find(
-          (v) =>
-            v.name.toLowerCase() === name.toLowerCase() &&
-            v.lang.toLowerCase().startsWith(langPrefix)
-        );
-        if (match) return match;
-      }
-      return (
-        allVoices.find((v) => v.lang.toLowerCase().startsWith(langPrefix)) ||
-        allVoices[0]
-      );
-    };
-
-    const loadVoices = () => {
-      const list = window.speechSynthesis.getVoices();
-      if (!list || list.length === 0) {
-        // some browsers need another tick
-        setTimeout(loadVoices, 150);
-        return;
-      }
-      setVoices(list);
-      const en = pickBestVoice(list, "en", preferredNames.en);
-      const targetLang = TARGET_LANGS.find((t) => t.code === targetLangCode);
-      const targetPrefix = targetLang?.voicePrefix || "pl";
-      const targetPrefs = preferredNames[targetPrefix] || [];
-      const tgt = pickBestVoice(list, targetPrefix, targetPrefs);
-      setEnglishVoice(en?.name || "");
-      setTargetVoice(tgt?.name || "");
-    };
-
-    loadVoices();
-    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
-    return () => {
-      window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
-    };
-  }, [targetLangCode]);
-
   const badgeColor = {
     idle: "bg-zinc-700 text-zinc-200",
     checking: "bg-blue-500/20 text-blue-200 ring-1 ring-blue-400/60",
@@ -168,20 +109,6 @@ export default function Home() {
     if (!progress.total) return 0;
     return Math.min(100, Math.round((progress.processed / progress.total) * 100));
   }, [progress.processed, progress.total]);
-
-  const speakText = (text: string, lang: string, voiceName?: string) => {
-    if (typeof window === "undefined" || !text.trim()) return;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang;
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    if (voiceName) {
-      const voice = voices.find((v) => v.name === voiceName);
-      if (voice) utterance.voice = voice;
-    }
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  };
 
   const handleTranslateInChunks = async () => {
     const targetLang =
@@ -206,6 +133,7 @@ export default function Home() {
     const chunks = Math.max(1, Math.ceil(total / CHUNK_SIZE));
 
     setTranslateState("running");
+    setDownloadReady(false);
     setProgress({
       processed: 0,
       total,
@@ -224,7 +152,15 @@ export default function Home() {
         const response = await fetch("/api/translate-batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lines: slice, targetLanguage: targetLang.label }),
+          body: JSON.stringify({
+            lines: slice,
+            targetLanguage: targetLang.label,
+            movieTitle: movieInfo?.title,
+            movieYear: movieInfo?.release_date
+              ? movieInfo.release_date.slice(0, 4)
+              : undefined,
+            movieOverview: movieInfo?.overview,
+          }),
         });
         const data = await response.json();
 
@@ -263,6 +199,7 @@ export default function Home() {
     }
 
     setTranslateState("done");
+    setDownloadReady(true);
     setProgress((prev) => ({
       ...prev,
       message: `Completed translation to ${targetLang.label} in ${CHUNK_SIZE}-line batches.`,
@@ -279,6 +216,9 @@ export default function Home() {
       setSourceText(text);
       setTargetText("");
       setSourceFileName(file.name);
+      const guessed = file.name.replace(/\.[^.]+$/, "").replace(/[_\.]/g, " ");
+      setMovieQuery(guessed);
+      void guessMovie(file.name);
       setProgress({
         processed: 0,
         total: text ? text.split(/\r?\n/).length : 0,
@@ -290,57 +230,166 @@ export default function Home() {
     reader.readAsText(file);
   };
 
+  const handleDownload = () => {
+    if (!targetText.trim()) return;
+    const blob = new Blob([targetText], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const lang = TARGET_LANGS.find((t) => t.code === targetLangCode)?.label || "translated";
+    const base = sourceFileName ? sourceFileName.replace(/\.srt$/i, "") : "subtitles";
+    link.download = `${base}-${lang}.srt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const fetchMovie = async (query: string) => {
+    if (!query.trim()) return;
+    setMovieLoading(true);
+    setMovieError("");
+    try {
+      const res = await fetch("/api/tmdb/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok || !data.first) {
+        setMovieInfo(null);
+        console.error("[ui] TMDB search error", { status: res.status, body: data });
+        setMovieError(
+          data?.error
+            ? `Could not find movie: ${data.error}`
+            : "Could not find movie."
+        );
+        return;
+      }
+      setMovieInfo(data.first);
+    } catch (error) {
+      setMovieInfo(null);
+      console.error("[ui] TMDB search exception", { error });
+      setMovieError("Movie lookup failed. Try a different title.");
+    } finally {
+      setMovieLoading(false);
+    }
+  };
+
+  const guessMovie = async (filename: string) => {
+    if (!filename.trim()) return;
+    setGuessLoading(true);
+    try {
+      const res = await fetch("/api/guess-movie", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok && data.guess?.title) {
+        const title = data.guess.title;
+        const year = data.guess.year ? ` (${data.guess.year})` : "";
+        const combined = `${title}${year}`.trim();
+        setMovieQuery(combined);
+        await fetchMovie(combined);
+      }
+    } catch (error) {
+      // ignore guess errors silently
+    } finally {
+      setGuessLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-black text-zinc-100">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-8 px-6 py-14">
-        <header className="flex flex-col gap-3">
-          <p className="text-sm uppercase tracking-[0.2em] text-zinc-400">
-            Global Cinema Labs
-          </p>
+        <header className="flex flex-col gap-4 text-center sm:text-left">
           <h1 className="text-4xl font-semibold sm:text-5xl">
-            Subtitle translation workspace
+            Translate your Subtitles
           </h1>
-          <p className="max-w-3xl text-lg text-zinc-400">
-            Paste or upload subtitles on the left. We translate in small batches, preserving the exact SRT structure.
+          <p className="max-w-3xl text-lg text-zinc-300">
+            Upload SRT, choose a language, convert, and download the translated file.
           </p>
         </header>
 
-        <section className="flex flex-col gap-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-6 shadow-2xl shadow-black/40 backdrop-blur">
-          <div className="flex flex-wrap items-center gap-4 justify-between">
-            <div className="flex items-center gap-3">
-              <div
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium ${badgeColor}`}
+        <main className="flex flex-col gap-6">
+          <div className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-6">
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full rounded-xl bg-emerald-600 px-4 py-4 text-lg font-semibold text-emerald-50 transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
-                <span className="h-2 w-2 rounded-full bg-current opacity-80" />
-                <span>{status.message}</span>
+                Original Subtitles (.srt)
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".srt,text/plain"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+              <div className="flex flex-wrap items-center justify-between text-sm text-zinc-400">
+                <span>
+                  {sourceFileName ? `Loaded: ${sourceFileName}` : "No file selected yet"}
+                </span>
+                <span>
+                  {progress.total > 0
+                    ? `${progress.total} lines detected`
+                    : ""}
+                </span>
               </div>
-              {status.detail && (
-                <span className="text-sm text-zinc-400">{status.detail}</span>
-              )}
+              <div className="flex flex-col gap-2">
+                <label className="text-sm text-zinc-400">Movie title (optional)</label>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    value={movieQuery}
+                    onChange={(e) => setMovieQuery(e.target.value)}
+                    className="flex-1 min-w-[200px] rounded border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none"
+                    placeholder="Guess or type the movie title…"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fetchMovie(movieQuery)}
+                    className="rounded bg-zinc-800 px-3 py-2 text-sm text-zinc-100 transition hover:bg-zinc-700"
+                    disabled={movieLoading || !movieQuery.trim()}
+                  >
+                    {movieLoading ? "Searching…" : "Find movie"}
+                  </button>
+                  {guessLoading && (
+                    <span className="text-xs text-zinc-400">Guessing title…</span>
+                  )}
+                </div>
+                {movieError && (
+                  <div className="text-sm text-rose-300">{movieError}</div>
+                )}
+                {movieInfo && (
+                  <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/80 p-3">
+                    {movieInfo.poster_path && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`https://image.tmdb.org/t/p/w185${movieInfo.poster_path}`}
+                        alt={movieInfo.title}
+                        className="h-24 w-16 rounded object-cover"
+                      />
+                    )}
+                    <div className="space-y-1 text-sm">
+                      <div className="font-semibold text-zinc-100">
+                        {movieInfo.title}
+                        {movieInfo.release_date
+                          ? ` (${movieInfo.release_date.slice(0, 4)})`
+                          : ""}
+                      </div>
+                      <div className="text-zinc-400 line-clamp-3">
+                        {movieInfo.overview || "No overview available."}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-            <button
-              onClick={checkConnection}
-              className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 transition hover:bg-emerald-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={status.state === "checking"}
-            >
-              {status.state === "checking" ? "Checking…" : "Re-check OpenAI"}
-            </button>
-          </div>
-        </section>
 
-        <main className="flex flex-col gap-4">
-          <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <h2 className="text-lg font-semibold text-zinc-100">
-                Translate in {CHUNK_SIZE}-line batches
-              </h2>
-              <p className="text-sm text-zinc-400">
-                Uses OpenAI {ACTIVE_MODEL} with strict line-for-line preservation (indices/timecodes unchanged).
-              </p>
-            </div>
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-zinc-400">Target:</span>
+                <span className="text-sm text-zinc-400">Target language:</span>
                 <select
                   value={targetLangCode}
                   onChange={(e) => setTargetLangCode(e.target.value)}
@@ -356,166 +405,57 @@ export default function Home() {
               <button
                 onClick={handleTranslateInChunks}
                 className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
-                disabled={translateState === "running"}
+                disabled={translateState === "running" || !sourceText.trim()}
               >
-                {translateState === "running"
-                  ? "Translating…"
-                  : `Translate ${CHUNK_SIZE}-line batches`}
+                {translateState === "running" ? "Converting…" : "Convert"}
               </button>
-              <div className="text-sm text-zinc-400">
-                {progress.total > 0
-                  ? `${progress.processed}/${progress.total} lines`
-                  : "Idle"}
-              </div>
             </div>
-          </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="flex flex-col gap-2 rounded-xl border border-zinc-800/70 bg-zinc-950/70 p-4">
+            <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between text-sm text-zinc-400">
-                <span>Source (English)</span>
-                <span>{sourceText.split(/\r?\n/).filter(Boolean).length} lines</span>
+                <span>Progress</span>
+                <span>
+                  {progress.total > 0
+                    ? `${progress.processed}/${progress.total} lines`
+                    : "Waiting to start"}
+                </span>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="rounded bg-emerald-600 px-3 py-1 text-emerald-50 transition hover:bg-emerald-500"
-                >
-                  Upload .srt
-                </button>
-                {sourceFileName && (
-                  <span className="truncate text-zinc-400">
-                    Loaded: {sourceFileName}
-                  </span>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".srt,text/plain"
-                  className="hidden"
-                  onChange={handleFileSelect}
+              <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+                <div
+                  className="h-full bg-emerald-500 transition-[width]"
+                  style={{ width: `${percent}%` }}
                 />
               </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-              <select
-                value={englishVoice}
-                onChange={(e) => setEnglishVoice(e.target.value)}
-                className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100"
-              >
-                {voices
-                  .filter((v) => v.lang.toLowerCase().startsWith("en"))
-                  .map((v) => (
-                    <option key={v.name} value={v.name}>
-                      {v.name} ({v.lang})
-                    </option>
-                  ))}
-                {voices.filter((v) => v.lang.toLowerCase().startsWith("en")).length ===
-                  0 && <option>No English voices found</option>}
-              </select>
+              {progress.message && (
+                <div className="text-sm text-zinc-300">{progress.message}</div>
+              )}
+              {translateState === "done" && (
+                <div className="text-sm font-medium text-emerald-300">
+                  Translation completed. Download your .srt below.
+                </div>
+              )}
+              {translateState === "error" && (
+                <div className="text-sm font-medium text-rose-300">
+                  Translation failed. Check the file and try again.
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between text-sm text-zinc-400">
+                <span>Download</span>
+              </div>
               <button
                 type="button"
-                onClick={() => speakText(sourceText, "en-US", englishVoice)}
-                className="rounded bg-zinc-800 px-3 py-1 text-zinc-200 transition hover:bg-zinc-700"
+                onClick={handleDownload}
+                disabled={!downloadReady}
+                className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Read English aloud
+                {downloadReady ? "Download translated .srt" : "Translation not ready"}
               </button>
             </div>
-              <textarea
-                value={sourceText}
-                onChange={(e) => setSourceText(e.target.value)}
-                className="h-[520px] w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900/80 p-4 font-mono text-sm text-zinc-100 outline-none ring-0 transition focus:border-emerald-500/60 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-                placeholder="Paste your English subtitle text here (one line per subtitle entry)…"
-              />
-            </div>
-
-            <div className="flex flex-col gap-2 rounded-xl border border-zinc-800/70 bg-zinc-950/70 p-4">
-              <div className="flex items-center justify-between text-sm text-zinc-400">
-                <span>Translated output</span>
-                <span>{targetText.split(/\r?\n/).filter(Boolean).length} lines</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                <select
-                  value={targetVoice}
-                  onChange={(e) => setTargetVoice(e.target.value)}
-                  className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100"
-                >
-                  {voices
-                    .filter((v) =>
-                      v.lang.toLowerCase().startsWith(
-                        (TARGET_LANGS.find((t) => t.code === targetLangCode)?.voicePrefix ||
-                          "pl")
-                      )
-                    )
-                    .map((v) => (
-                      <option key={v.name} value={v.name}>
-                        {v.name} ({v.lang})
-                      </option>
-                    ))}
-                  {voices.filter((v) =>
-                    v.lang
-                      .toLowerCase()
-                      .startsWith(
-                        (TARGET_LANGS.find((t) => t.code === targetLangCode)?.voicePrefix ||
-                          "pl")
-                      )
-                  ).length === 0 && <option>No voices found</option>}
-                </select>
-                <button
-                  type="button"
-                  onClick={() =>
-                    speakText(
-                      targetText,
-                      targetLangCode,
-                      targetVoice
-                    )
-                  }
-                  className="rounded bg-zinc-800 px-3 py-1 text-zinc-200 transition hover:bg-zinc-700"
-                >
-                  Read aloud
-                </button>
-              </div>
-              <textarea
-                value={targetText}
-                onChange={(e) => setTargetText(e.target.value)}
-                className="h-[520px] w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900/80 p-4 font-mono text-sm text-zinc-100 outline-none ring-0 transition focus:border-emerald-500/60 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-                placeholder="Translated text appears here in 100-line batches."
-              />
-            </div>
           </div>
-
-          <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/70 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-300">
-              <span className="font-medium text-zinc-100">
-                Progress: {percent}% ({progress.processed}/{progress.total || "0"} lines)
-              </span>
-              <span className="text-zinc-400">
-                {progress.chunk > 0
-                  ? `Chunk ${progress.chunk} of ${progress.chunks || "—"}`
-                  : "Waiting to start"}
-              </span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
-              <div
-                className="h-full bg-emerald-500 transition-[width]"
-                style={{ width: `${percent}%` }}
-              />
-            </div>
-            {progress.message && (
-              <div className="text-sm text-zinc-400">{progress.message}</div>
-            )}
-            {translateState === "done" && (
-              <div className="text-sm font-medium text-emerald-300">
-                Translation completed. Polish subtitles are ready on the right.
-              </div>
-            )}
-            {translateState === "error" && (
-              <div className="text-sm font-medium text-rose-300">
-                Translation failed. Check the text and try again.
-              </div>
-            )}
-        </div>
-      </main>
+        </main>
       </div>
     </div>
   );
