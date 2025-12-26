@@ -69,6 +69,108 @@ export default function Home() {
   const [guessLoading, setGuessLoading] = useState<boolean>(false);
   const [showOriginalModal, setShowOriginalModal] = useState<boolean>(false);
   const [showTranslatedModal, setShowTranslatedModal] = useState<boolean>(false);
+  const [videoUrl, setVideoUrl] = useState<string>("");
+  const [videoName, setVideoName] = useState<string>("");
+  const [subtitleChoice, setSubtitleChoice] = useState<"none" | "original" | "translated">(
+    "none"
+  );
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [subtitleOffset, setSubtitleOffset] = useState<number>(0);
+  const [originalCues, setOriginalCues] = useState<
+    { start: number; end: number; text: string }[]
+  >([]);
+  const [translatedCues, setTranslatedCues] = useState<
+    { start: number; end: number; text: string }[]
+  >([]);
+  const [activeSubtitle, setActiveSubtitle] = useState<string>("");
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(false);
+  const [voiceRate, setVoiceRate] = useState<number>(1);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [lastSpoken, setLastSpoken] = useState<string>("");
+
+  // Cleanup object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (videoUrl) URL.revokeObjectURL(videoUrl);
+    };
+  }, [videoUrl]);
+
+  // Load available voices for Web Speech
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+
+    const loadVoices = () => {
+      const list = window.speechSynthesis.getVoices();
+      if (!list || list.length === 0) {
+        setTimeout(loadVoices, 150);
+        return;
+      }
+      setVoices(list);
+    };
+
+    loadVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+    return () => {
+      window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+    };
+  }, []);
+
+  useEffect(() => {
+    setOriginalCues(parseSrt(sourceText));
+  }, [sourceText]);
+
+  useEffect(() => {
+    setTranslatedCues(parseSrt(targetText));
+  }, [targetText]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const interval = setInterval(() => {
+      const now = video.currentTime + subtitleOffset;
+      let text = "";
+      if (subtitleChoice === "original" && originalCues.length > 0) {
+        const cue = originalCues.find((c) => now >= c.start && now <= c.end);
+        text = cue?.text ?? "";
+      } else if (subtitleChoice === "translated" && translatedCues.length > 0) {
+        const cue = translatedCues.find((c) => now >= c.start && now <= c.end);
+        text = cue?.text ?? "";
+      }
+      setActiveSubtitle(text);
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [subtitleChoice, originalCues, translatedCues, subtitleOffset]);
+
+  // Speak active subtitle when enabled
+  useEffect(() => {
+    if (!voiceEnabled) {
+      setLastSpoken("");
+      return;
+    }
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const text = activeSubtitle.trim();
+    if (!text || text === lastSpoken) return;
+
+    const targetLang =
+      subtitleChoice === "translated"
+        ? targetLangCode
+        : "en-US";
+    const langPrefix = targetLang.split("-")[0].toLowerCase();
+    const voice =
+      voices.find((v) => v.lang.toLowerCase() === targetLang.toLowerCase()) ||
+      voices.find((v) => v.lang.toLowerCase().startsWith(langPrefix)) ||
+      voices[0];
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = voice?.lang || targetLang;
+    if (voice) utterance.voice = voice;
+    utterance.rate = Math.max(0.6, Math.min(2, voiceRate));
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    setLastSpoken(text);
+  }, [activeSubtitle, voiceEnabled, voiceRate, targetLangCode, subtitleChoice, voices, lastSpoken]);
 
   const checkConnection = async () => {
     setStatus({ state: "checking", message: "Contacting OpenAI…" });
@@ -233,6 +335,51 @@ export default function Home() {
     reader.readAsText(file);
   };
 
+  const handleVideoSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (videoUrl) URL.revokeObjectURL(videoUrl);
+    const url = URL.createObjectURL(file);
+    setVideoUrl(url);
+    setVideoName(file.name);
+  };
+
+  const parseTime = (value: string) => {
+    // "00:01:35,053"
+    const [hms, ms] = value.split(",");
+    if (!hms || !ms) return 0;
+    const [h, m, s] = hms.split(":").map(Number);
+    return h * 3600 + m * 60 + s + Number(ms) / 1000;
+  };
+
+  const parseSrt = (srt: string) => {
+    if (!srt.trim()) return [];
+    const blocks = srt.replace(/\r\n/g, "\n").split(/\n\n+/);
+    const cues: { start: number; end: number; text: string }[] = [];
+    for (const block of blocks) {
+      const rawLines = block.split("\n").filter((l) => l.trim().length > 0);
+      if (rawLines.length < 2) continue;
+
+      // Find the timing line (can be line 1 if index is present)
+      let timingLineIndex = 0;
+      if (/^\d+$/.test(rawLines[0]) && rawLines.length >= 2) {
+        timingLineIndex = 1;
+      }
+      const timing = rawLines[timingLineIndex]?.match(
+        /(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/
+      );
+      if (!timing) continue;
+
+      const textStartIndex = timingLineIndex + 1;
+      const text = rawLines.slice(textStartIndex).join("\n");
+      const start = parseTime(timing[1]);
+      const end = parseTime(timing[2]);
+
+      cues.push({ start, end, text });
+    }
+    return cues;
+  };
+
   const handleDownload = () => {
     if (!targetText.trim()) return;
     const blob = new Blob([targetText], { type: "text/plain;charset=utf-8" });
@@ -314,6 +461,123 @@ export default function Home() {
         </header>
 
         <main className="flex flex-col gap-6">
+          <div className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-zinc-100">Video preview</h2>
+                <p className="text-sm text-zinc-400">
+                  Load a local video to preview with original or translated subtitles while converting.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = "video/*";
+                    input.onchange = (e) =>
+                      handleVideoSelect(e as unknown as React.ChangeEvent<HTMLInputElement>);
+                    input.click();
+                  }}
+                  className="rounded bg-emerald-600 px-3 py-2 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                >
+                  Load video
+                </button>
+                <select
+                  value={subtitleChoice}
+                  onChange={(e) =>
+                    setSubtitleChoice(e.target.value as "none" | "original" | "translated")
+                  }
+                  className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+                >
+                  <option value="none">No subtitles</option>
+                  <option value="original" disabled={!sourceText.trim()}>
+                    Original subtitles
+                  </option>
+                  <option value="translated" disabled={!targetText.trim()}>
+                    Translated subtitles
+                  </option>
+                </select>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-400">Offset (s):</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSubtitleOffset((v) => v - 0.5)}
+                      className="rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-100 transition hover:bg-zinc-700"
+                    >
+                      -0.5
+                    </button>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={subtitleOffset}
+                      onChange={(e) => setSubtitleOffset(Number(e.target.value))}
+                      className="w-20 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100 focus:border-emerald-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSubtitleOffset((v) => v + 0.5)}
+                      className="rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-100 transition hover:bg-zinc-700"
+                    >
+                      +0.5
+                    </button>
+                  </div>
+                  <label className="ml-3 flex items-center gap-2 text-xs text-zinc-400">
+                    <input
+                      type="checkbox"
+                      checked={voiceEnabled}
+                      onChange={(e) => setVoiceEnabled(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    Read aloud
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-zinc-400">Rate:</span>
+                    <input
+                      type="range"
+                      min={0.6}
+                      max={2}
+                      step={0.1}
+                      value={voiceRate}
+                      onChange={(e) => setVoiceRate(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="overflow-hidden rounded-xl border border-zinc-800 bg-black">
+              {videoUrl ? (
+                <div className="relative">
+                  <video
+                    key={videoUrl}
+                    ref={videoRef}
+                    className="w-full"
+                    controls
+                    crossOrigin="anonymous"
+                  >
+                    <source src={videoUrl} />
+                  </video>
+                  {subtitleChoice !== "none" && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center px-4">
+                      <div className="w-full max-w-3xl px-4 py-2 text-center text-lg font-semibold leading-7 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                        {activeSubtitle || ""}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex h-56 items-center justify-center text-sm text-zinc-500">
+                  Load a video file to preview with subtitles.
+                </div>
+              )}
+            </div>
+            {videoName && (
+              <div className="text-xs text-zinc-500">Loaded video: {videoName}</div>
+            )}
+          </div>
+
           <div className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-6">
             <div className="flex flex-col gap-3">
               <button
@@ -422,7 +686,7 @@ export default function Home() {
                     </option>
                   ))}
                 </select>
-              </div>
+        </div>
               <button
                 onClick={handleTranslateInChunks}
                 className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
@@ -475,8 +739,8 @@ export default function Home() {
                 {downloadReady ? "Download translated .srt" : "Translation not ready"}
               </button>
             </div>
-          </div>
-        </main>
+        </div>
+      </main>
 
         {showOriginalModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
