@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const model = process.env.OPENAI_MODEL || "gpt-4.1";
+  const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
   let body: TranslateRequest;
   try {

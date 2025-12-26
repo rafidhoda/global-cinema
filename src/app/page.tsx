@@ -19,7 +19,7 @@ type Progress = {
   message: string;
 };
 
-const CHUNK_SIZE = 30;
+const CHUNK_SIZE = 60;
 const ACTIVE_MODEL = process.env.OPENAI_MODEL || "gpt-4.1";
 
 type TargetLang = {
@@ -32,6 +32,7 @@ const TARGET_LANGS: TargetLang[] = [
   { code: "no-NO", label: "Norwegian" },
   { code: "pl-PL", label: "Polish" },
   { code: "hi-IN", label: "Hindi" },
+  { code: "hi-Latn", label: "Hindi (English letters)" },
   { code: "ar-SA", label: "Arabic" },
   { code: "ur-PK", label: "Urdu" },
 ];
@@ -66,6 +67,8 @@ export default function Home() {
   const [movieLoading, setMovieLoading] = useState<boolean>(false);
   const [movieError, setMovieError] = useState<string>("");
   const [guessLoading, setGuessLoading] = useState<boolean>(false);
+  const [showOriginalModal, setShowOriginalModal] = useState<boolean>(false);
+  const [showTranslatedModal, setShowTranslatedModal] = useState<boolean>(false);
 
   const checkConnection = async () => {
     setStatus({ state: "checking", message: "Contacting OpenAI…" });
@@ -337,6 +340,24 @@ export default function Home() {
                     : ""}
                 </span>
               </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                <button
+                  type="button"
+                  onClick={() => setShowOriginalModal(true)}
+                  disabled={!sourceText.trim()}
+                  className="rounded bg-zinc-800 px-3 py-1 text-zinc-200 transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  View original
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowTranslatedModal(true)}
+                  disabled={!targetText.trim() && translateState !== "running"}
+                  className="rounded bg-zinc-800 px-3 py-1 text-zinc-200 transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  View translation
+                </button>
+              </div>
               <div className="flex flex-col gap-2">
                 <label className="text-sm text-zinc-400">Movie title (optional)</label>
                 <div className="flex flex-wrap gap-2">
@@ -456,6 +477,49 @@ export default function Home() {
             </div>
           </div>
         </main>
+
+        {showOriginalModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+            <div className="max-h-[80vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+                <h3 className="text-lg font-semibold text-zinc-100">Original subtitles</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowOriginalModal(false)}
+                  className="rounded bg-zinc-800 px-3 py-1 text-sm text-zinc-100 transition hover:bg-zinc-700"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="max-h-[70vh] overflow-auto px-4 py-3 font-mono text-sm text-zinc-200 whitespace-pre-wrap">
+                {sourceText || "No content loaded."}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showTranslatedModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+            <div className="max-h-[80vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+                <h3 className="text-lg font-semibold text-zinc-100">Translated subtitles</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowTranslatedModal(false)}
+                  className="rounded bg-zinc-800 px-3 py-1 text-sm text-zinc-100 transition hover:bg-zinc-700"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="max-h-[70vh] overflow-auto px-4 py-3 font-mono text-sm text-zinc-200 whitespace-pre-wrap">
+                {targetText ||
+                  (translateState === "running"
+                    ? "Translating… content will appear as it completes."
+                    : "No translated content yet.")}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
