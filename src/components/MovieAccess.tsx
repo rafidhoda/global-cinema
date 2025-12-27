@@ -99,7 +99,7 @@ export function MovieAccess({ results }: Props) {
                 />
                 <button
                   type="submit"
-                  className="rounded bg-emerald-600 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:w-auto"
+                  className="rounded bg-emerald-600 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:w-auto cursor-pointer"
                 >
                   Unlock
                 </button>
@@ -178,7 +178,7 @@ export function MovieAccess({ results }: Props) {
             <button
               key={movie.id || movie.title}
               onClick={() => setOpenMovie(movie)}
-              className="transition hover:-translate-y-1 hover:shadow-emerald-500/20 text-left"
+              className="transition hover:-translate-y-1 hover:shadow-emerald-500/20 text-left cursor-pointer"
             >
               {Card}
             </button>
@@ -197,7 +197,7 @@ export function MovieAccess({ results }: Props) {
               <button
                 type="button"
                 onClick={() => setOpenMovie(null)}
-                className="rounded bg-zinc-800 px-3 py-1 text-sm text-zinc-100 transition hover:bg-zinc-700"
+                className="rounded bg-zinc-800 px-3 py-1 text-sm text-zinc-100 transition hover:bg-zinc-700 cursor-pointer"
               >
                 Close
               </button>
@@ -228,7 +228,7 @@ export function MovieAccess({ results }: Props) {
                       }
                     }}
                     disabled={!openMovie.external_link}
-                    className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                   >
                     Download Movie
                   </button>
@@ -242,7 +242,7 @@ export function MovieAccess({ results }: Props) {
                           onClick={() => {
                             if (englishUrl) window.open(englishUrl, "_blank", "noopener,noreferrer");
                           }}
-                          className={`rounded px-3 py-2 text-zinc-200 transition ${
+                        className={`rounded px-3 py-2 text-zinc-200 transition cursor-pointer ${
                             englishUrl
                               ? "bg-emerald-600 hover:bg-emerald-500"
                               : "bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
@@ -253,7 +253,7 @@ export function MovieAccess({ results }: Props) {
                         <button
                           type="button"
                           disabled
-                          className="rounded bg-zinc-800 px-3 py-2 text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded bg-zinc-800 px-3 py-2 text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                         >
                           Polish (coming soon)
                         </button>
