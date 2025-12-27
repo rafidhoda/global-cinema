@@ -38,30 +38,39 @@ export async function POST(req: Request) {
     );
   }
 
-  const prefix = `movies/${movieId}/${language}`;
-  const { data, error } = await supabase.storage.from(bucket).list(prefix, {
-    limit: 10,
-    sortBy: { column: "created_at", order: "desc" },
-  });
+  const prefixes = [
+    `movies/${movieId}/${language}`, // expected structure
+    `${language}`, // legacy flat language folder
+    `${language}/${movieId}`, // legacy variant
+  ];
 
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  for (const prefix of prefixes) {
+    const { data, error } = await supabase.storage.from(bucket).list(prefix, {
+      limit: 10,
+      sortBy: { column: "created_at", order: "desc" },
+    });
+
+    if (error) {
+      continue;
+    }
+
+    if (!data || data.length === 0) {
+      continue;
+    }
+
+    const first = data[0];
+    const fullPath = `${prefix}/${first.name}`;
+    const { data: pub } = supabase.storage.from(bucket).getPublicUrl(fullPath, {
+      download: fullPath.endsWith(".srt") ? fullPath.split("/").pop() : true,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      url: pub?.publicUrl || null,
+      path: fullPath,
+    });
   }
 
-  if (!data || data.length === 0) {
-    return NextResponse.json({ ok: true, url: null, path: null });
-  }
-
-  const first = data[0];
-  const fullPath = `${prefix}/${first.name}`;
-  const { data: pub } = supabase.storage.from(bucket).getPublicUrl(fullPath, {
-    download: fullPath.endsWith(".srt") ? fullPath.split("/").pop() : true,
-  });
-
-  return NextResponse.json({
-    ok: true,
-    url: pub?.publicUrl || null,
-    path: fullPath,
-  });
+  return NextResponse.json({ ok: true, url: null, path: null });
 }
 
