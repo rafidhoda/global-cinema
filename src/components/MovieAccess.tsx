@@ -223,7 +223,7 @@ export function MovieAccess({ results }: Props) {
               </button>
             </div>
             <div className="flex flex-col gap-4 p-4 sm:flex-row">
-              <div className="relative h-64 w-44 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-900">
+              <div className="relative h-80 w-56 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-900">
                 {openMovie.poster_path ? (
                   <Image
                     src={`https://image.tmdb.org/t/p/w342${openMovie.poster_path}`}
@@ -278,48 +278,50 @@ export function MovieAccess({ results }: Props) {
                           Polish (coming soon)
                         </button>
                       </div>
-                      <div className="flex flex-col gap-2">
-                        <label className="text-xs text-zinc-400">Upload English subtitles (.srt)</label>
-                        <input
-                          type="file"
-                          accept=".srt,text/plain"
-                          onChange={async (e) => {
-                            if (!openMovie?.id) {
-                              setUploadMessage("Missing movie id; cannot upload.");
-                              return;
-                            }
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            setUploading(true);
-                            setUploadMessage("");
-                            try {
-                              const form = new FormData();
-                              form.append("movieId", openMovie.id);
-                              form.append("language", "en");
-                              form.append("file", file);
-                              const res = await fetch("/api/subtitles/upload", {
-                                method: "POST",
-                                body: form,
-                              });
-                              const data = await res.json();
-                              if (!res.ok || !data.ok) {
-                                setUploadMessage(data?.error || "Upload failed");
-                              } else {
-                                setUploadMessage("Uploaded successfully.");
-                                if (data.url) setEnglishUrl(data.url as string);
+                      {isAdmin && (
+                        <div className="flex flex-col gap-2">
+                          <label className="text-xs text-zinc-400">Upload English subtitles (.srt)</label>
+                          <input
+                            type="file"
+                            accept=".srt,text/plain"
+                            onChange={async (e) => {
+                              if (!openMovie?.id) {
+                                setUploadMessage("Missing movie id; cannot upload.");
+                                return;
                               }
-                            } catch (err) {
-                              setUploadMessage("Upload failed.");
-                            } finally {
-                              setUploading(false);
-                              e.target.value = "";
-                            }
-                          }}
-                          className="text-sm text-zinc-200"
-                        />
-                        {uploading && <span className="text-emerald-400">Uploading…</span>}
-                        {uploadMessage && <span className="text-emerald-300">{uploadMessage}</span>}
-                      </div>
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setUploading(true);
+                              setUploadMessage("");
+                              try {
+                                const form = new FormData();
+                                form.append("movieId", openMovie.id);
+                                form.append("language", "en");
+                                form.append("file", file);
+                                const res = await fetch("/api/subtitles/upload", {
+                                  method: "POST",
+                                  body: form,
+                                });
+                                const data = await res.json();
+                                if (!res.ok || !data.ok) {
+                                  setUploadMessage(data?.error || "Upload failed");
+                                } else {
+                                  setUploadMessage("Uploaded successfully.");
+                                  if (data.url) setEnglishUrl(data.url as string);
+                                }
+                              } catch (err) {
+                                setUploadMessage("Upload failed.");
+                              } finally {
+                                setUploading(false);
+                                e.target.value = "";
+                              }
+                            }}
+                            className="text-sm text-zinc-200"
+                          />
+                          {uploading && <span className="text-emerald-400">Uploading…</span>}
+                          {uploadMessage && <span className="text-emerald-300">{uploadMessage}</span>}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
