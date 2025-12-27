@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,12 +9,29 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const anthropic = process.env.CLAUDE_API_KEY
+  ? new Anthropic({
+      apiKey: process.env.CLAUDE_API_KEY || "",
+    })
+  : null;
+const CLAUDE_MODELS = [
+  "claude-sonnet-4-5-20250929",
+  "claude-sonnet-4-5",
+  "claude-haiku-4-5-20251001",
+  "claude-haiku-4-5",
+  "claude-3-5-sonnet-20241022",
+  "claude-3-5-sonnet-20240620",
+  "claude-3-sonnet-20240229",
+  "claude-3-haiku-20240307",
+];
+
 type TranslateRequest = {
   lines: string[];
   targetLanguage?: string;
   movieTitle?: string;
   movieYear?: string;
   movieOverview?: string;
+  modelPreference?: "auto" | "openai" | "claude";
 };
 
 const SYSTEM_PROMPT = `
@@ -51,6 +69,7 @@ export async function POST(request: Request) {
 
   const lines = Array.isArray(body.lines) ? body.lines : [];
   const targetLanguage = body.targetLanguage || "Polish";
+  const modelPreference = body.modelPreference || "auto";
   const movieTitle = body.movieTitle;
   const movieYear = body.movieYear;
   const movieOverview = body.movieOverview;
@@ -62,7 +81,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const translateChunk = async (
+  const translateChunkOpenAI = async (
     chunk: string[],
     depth: number,
     attempt: number = 0
@@ -134,9 +153,9 @@ export async function POST(request: Request) {
         // Fallback: split and retry smaller batches to preserve structure
         if (chunk.length > 1 && depth < 4) {
           const mid = Math.floor(chunk.length / 2);
-          const left = await translateChunk(chunk.slice(0, mid), depth + 1);
+          const left = await translateChunkOpenAI(chunk.slice(0, mid), depth + 1);
           if (!left.ok) return left;
-          const right = await translateChunk(chunk.slice(mid), depth + 1);
+          const right = await translateChunkOpenAI(chunk.slice(mid), depth + 1);
           if (!right.ok) return right;
           return { ok: true, lines: [...left.lines, ...right.lines] };
         }
@@ -166,19 +185,107 @@ export async function POST(request: Request) {
         const backoff = 500 * Math.pow(2, attempt); // 0.5s, 1s, 2s
         console.warn("[translate-batch] retrying after backoff", { backoff, attempt: attempt + 1 });
         await new Promise((resolve) => setTimeout(resolve, backoff));
-        return translateChunk(chunk, depth, attempt + 1);
+        return translateChunkOpenAI(chunk, depth, attempt + 1);
       }
 
       return { ok: false, error: status ? `Upstream error ${status}: ${message}` : message };
     }
   };
 
-  const result = await translateChunk(lines, 0);
+  const translateChunkClaude = async (
+    chunk: string[]
+  ): Promise<{ ok: true; lines: string[]; modelUsed: string } | { ok: false; error: string }> => {
+    if (!anthropic) return { ok: false, error: "Claude client not configured" };
+    const prompt = JSON.stringify({
+      instructions: `Translate lines to ${targetLanguage}; preserve indices/timecodes/blank/markup lines verbatim; output JSON with the same number of lines.`,
+      expectedCount: chunk.length,
+      movie: {
+        title: movieTitle ?? null,
+        year: movieYear ?? null,
+        overview: movieOverview ?? null,
+      },
+      lines: chunk,
+    });
+
+    for (const claudeModel of CLAUDE_MODELS) {
+      try {
+        const completion = await anthropic.messages.create({
+          model: claudeModel,
+          temperature: 0.1,
+          max_tokens: 4000,
+          system: `${SYSTEM_PROMPT}\nReturn strictly JSON: {"lines":["line1","line2",...]}`,
+          messages: [{ role: "user", content: prompt }],
+        });
+
+        const content =
+          completion.content?.[0]?.type === "text" ? completion.content[0].text : "";
+
+        let parsed: { lines?: string[] };
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          console.error("[translate-batch] Claude non-JSON response", { content, claudeModel });
+          continue;
+        }
+
+        const translatedLines = parsed.lines;
+        if (!Array.isArray(translatedLines)) {
+          continue;
+        }
+        if (translatedLines.length !== chunk.length) {
+          continue;
+        }
+
+        return { ok: true, lines: translatedLines, modelUsed: claudeModel };
+      } catch (error: any) {
+        const status = error?.status;
+        const message = error instanceof Error ? error.message : "Claude translate failed";
+        // If model not found, try next in list; otherwise stop.
+        if (!(status === 404 || message.includes("not_found"))) {
+          console.error("[translate-batch] Claude error", { error: message, claudeModel });
+          return { ok: false, error: message };
+        }
+      }
+    }
+
+    return { ok: false, error: "Claude models unavailable (not_found)" };
+  };
+
+  // Model routing
+  let result: { ok: true; lines: string[]; modelUsed?: string } | { ok: false; error: string };
+  let modelUsed = model;
+
+  if (modelPreference === "claude") {
+    result = await translateChunkClaude(lines);
+    modelUsed = result.ok ? result.modelUsed || CLAUDE_MODELS[0] : CLAUDE_MODELS[0];
+  } else if (modelPreference === "openai") {
+    result = await translateChunkOpenAI(lines, 0);
+    modelUsed = model;
+  } else {
+    // auto: try OpenAI then Claude
+    const openaiResult = await translateChunkOpenAI(lines, 0);
+    if (openaiResult.ok) {
+      result = openaiResult;
+      modelUsed = model;
+    } else {
+      const claudeResult = await translateChunkClaude(lines);
+      result = claudeResult;
+      modelUsed = claudeResult.ok ? claudeResult.modelUsed || CLAUDE_MODELS[0] : model;
+      if (!claudeResult.ok) {
+        return NextResponse.json({ ok: false, error: claudeResult.error }, { status: 500 });
+      }
+    }
+  }
 
   if (!result.ok) {
     return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, lines: result.lines, model, targetLanguage });
+  return NextResponse.json({
+    ok: true,
+    lines: result.lines,
+    model: modelUsed,
+    targetLanguage,
+  });
 }
 

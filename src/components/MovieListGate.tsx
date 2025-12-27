@@ -9,12 +9,16 @@ type Movie = {
   poster_path?: string | null;
   overview?: string | null;
   external_link?: string | null;
+  id?: string;
 };
 
 export function MovieListGate({ results }: { results: Movie[] }) {
   const [password, setPassword] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [openMovie, setOpenMovie] = useState<Movie | null>(null);
+  const [uploading, setUploading] = useState<boolean>(false);
+  const [uploadMessage, setUploadMessage] = useState<string>("");
+  const [englishUrl, setEnglishUrl] = useState<string | null>(null);
 
   // Load saved state from localStorage
   useEffect(() => {
@@ -24,6 +28,31 @@ export function MovieListGate({ results }: { results: Movie[] }) {
       setUnlocked(true);
     }
   }, []);
+
+  useEffect(() => {
+    const fetchEnglish = async () => {
+      if (!openMovie?.id) {
+        setEnglishUrl(null);
+        return;
+      }
+      try {
+        const res = await fetch("/api/subtitles/list", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ movieId: openMovie.id, language: "en" }),
+        });
+        const data = await res.json();
+        if (res.ok && data.ok && data.url) {
+          setEnglishUrl(data.url as string);
+        } else {
+          setEnglishUrl(null);
+        }
+      } catch (err) {
+        setEnglishUrl(null);
+      }
+    };
+    fetchEnglish();
+  }, [openMovie]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,25 +196,73 @@ export function MovieListGate({ results }: { results: Movie[] }) {
                   </button>
                   <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
                     <div className="text-sm font-semibold text-zinc-100">Subtitles</div>
-                    <div className="flex gap-3 text-xs text-zinc-400">
-                      <button
-                        type="button"
-                        disabled
-                        className="rounded bg-zinc-800 px-3 py-2 text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        English
-                      </button>
-                      <button
-                        type="button"
-                        disabled
-                        className="rounded bg-zinc-800 px-3 py-2 text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Polish
-                      </button>
+                    <div className="flex flex-col gap-3 text-xs text-zinc-400">
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          disabled={!englishUrl}
+                          onClick={() => {
+                            if (englishUrl) window.open(englishUrl, "_blank", "noopener,noreferrer");
+                          }}
+                          className={`rounded px-3 py-2 text-zinc-200 transition ${
+                            englishUrl
+                              ? "bg-emerald-600 hover:bg-emerald-500"
+                              : "bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          }`}
+                        >
+                          English {englishUrl ? "(download)" : "(upload to add)"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled
+                          className="rounded bg-zinc-800 px-3 py-2 text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Polish (coming soon)
+                        </button>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="text-xs text-zinc-400">Upload English subtitles (.srt)</label>
+                        <input
+                          type="file"
+                          accept=".srt,text/plain"
+                          onChange={async (e) => {
+                            if (!openMovie?.id) {
+                              setUploadMessage("Missing movie id; cannot upload.");
+                              return;
+                            }
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setUploading(true);
+                            setUploadMessage("");
+                            try {
+                              const form = new FormData();
+                              form.append("movieId", openMovie.id);
+                              form.append("language", "en");
+                              form.append("file", file);
+                              const res = await fetch("/api/subtitles/upload", {
+                                method: "POST",
+                                body: form,
+                              });
+                              const data = await res.json();
+                              if (!res.ok || !data.ok) {
+                                setUploadMessage(data?.error || "Upload failed");
+                              } else {
+                                setUploadMessage("Uploaded successfully.");
+                                if (data.url) setEnglishUrl(data.url as string);
+                              }
+                            } catch (err) {
+                              setUploadMessage("Upload failed.");
+                            } finally {
+                              setUploading(false);
+                              e.target.value = "";
+                            }
+                          }}
+                          className="text-sm text-zinc-200"
+                        />
+                        {uploading && <span className="text-emerald-400">Uploading…</span>}
+                        {uploadMessage && <span className="text-emerald-300">{uploadMessage}</span>}
+                      </div>
                     </div>
-                    <p className="text-xs text-zinc-500">
-                      (Subtitles download links can be wired here.)
-                    </p>
                   </div>
                 </div>
               </div>

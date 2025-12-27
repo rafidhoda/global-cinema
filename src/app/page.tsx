@@ -1,6 +1,7 @@
 import { MovieListGate } from "@/components/MovieListGate";
 
 type MovieRow = {
+  id: string;
   title: string;
   release_year: number | null;
   poster_path: string | null;
@@ -9,6 +10,7 @@ type MovieRow = {
 };
 
 type Movie = {
+  id: string;
   title: string;
   release_year?: number | null;
   poster_path?: string | null;
@@ -16,7 +18,13 @@ type Movie = {
   external_link?: string | null;
 };
 
-const fetchMovie = async (query: string): Promise<Movie | null> => {
+type MovieMeta = {
+  release_year?: number | null;
+  poster_path?: string | null;
+  overview?: string | null;
+};
+
+const fetchMovieMeta = async (query: string): Promise<MovieMeta | null> => {
   const token = process.env.TMDB_READ_TOKEN;
   const apiKey = process.env.TMDB_API_KEY;
   if (!token && !apiKey) return null;
@@ -44,7 +52,6 @@ const fetchMovie = async (query: string): Promise<Movie | null> => {
   const first = Array.isArray(data.results) && data.results.length > 0 ? data.results[0] : null;
   if (!first) return null;
   return {
-    title: first.title,
     release_year: first.release_date ? Number(first.release_date.slice(0, 4)) : null,
     poster_path: first.poster_path,
     overview: first.overview,
@@ -57,13 +64,16 @@ export default async function Home() {
 
   let rows: MovieRow[] = [];
   if (supabaseUrl && supabaseKey) {
-    const res = await fetch(`${supabaseUrl}/rest/v1/curated_movies?select=*`, {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/curated_movies?select=id,title,release_year,poster_path,overview,external_link`,
+      {
       headers: {
         apikey: supabaseKey,
         Authorization: `Bearer ${supabaseKey}`,
       },
-      cache: "no-store",
-    });
+        cache: "no-store",
+      }
+    );
     if (res.ok) {
       rows = (await res.json()) as MovieRow[];
     }
@@ -72,6 +82,7 @@ export default async function Home() {
   const results = await Promise.all(
     rows.map(async (row) => {
       let merged: Movie = {
+        id: row.id,
         title: row.title,
         release_year: row.release_year,
         poster_path: row.poster_path,
@@ -80,7 +91,7 @@ export default async function Home() {
       };
       // backfill from TMDB if missing poster/overview
       if (!row.poster_path || !row.overview) {
-        const fallback = await fetchMovie(row.title);
+        const fallback = await fetchMovieMeta(row.title);
         if (fallback) {
           merged = {
             ...merged,

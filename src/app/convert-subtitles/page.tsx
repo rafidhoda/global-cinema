@@ -57,6 +57,7 @@ export default function ConvertSubtitles() {
   const [sourceFileName, setSourceFileName] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [targetLangCode, setTargetLangCode] = useState<string>(TARGET_LANGS[0].code);
+  const [modelPreference, setModelPreference] = useState<"auto" | "openai" | "claude">("auto");
   const [downloadReady, setDownloadReady] = useState<boolean>(false);
   const [movieQuery, setMovieQuery] = useState<string>("");
   const [movieInfo, setMovieInfo] = useState<{
@@ -256,6 +257,7 @@ export default function ConvertSubtitles() {
           body: JSON.stringify({
             lines: slice,
             targetLanguage: targetLang.label,
+            modelPreference,
             movieTitle: movieInfo?.title,
             movieYear: movieInfo?.release_date ? movieInfo.release_date.slice(0, 4) : undefined,
             movieOverview: movieInfo?.overview,
@@ -661,6 +663,20 @@ export default function ConvertSubtitles() {
                       {lang.label}
                     </option>
                   ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-zinc-400">Model:</span>
+                <select
+                  value={modelPreference}
+                  onChange={(e) =>
+                    setModelPreference(e.target.value as "auto" | "openai" | "claude")
+                  }
+                  className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+                >
+                  <option value="auto">Auto (OpenAI then Claude fallback)</option>
+                  <option value="openai">OpenAI (gpt-4.1-mini)</option>
+                  <option value="claude">Claude (Sonnet 4.5 preferred)</option>
                 </select>
               </div>
               <button
