@@ -64,7 +64,8 @@ export async function POST(request: Request) {
 
   const translateChunk = async (
     chunk: string[],
-    depth: number
+    depth: number,
+    attempt: number = 0
   ): Promise<{ ok: true; lines: string[] } | { ok: false; error: string }> => {
     try {
       console.log("[translate-batch] start", {
@@ -154,11 +155,21 @@ export async function POST(request: Request) {
       }
 
       return { ok: true, lines: translatedLines };
-    } catch (error) {
+    } catch (error: any) {
+      const status = error?.status;
+      const isRetryable = status === 429 || status === 503;
       const message =
         error instanceof Error ? error.message : "Unable to translate";
-      console.error("[translate-batch] Translation error", { error, depth, size: chunk.length });
-      return { ok: false, error: message };
+      console.error("[translate-batch] Translation error", { error, status, depth, size: chunk.length });
+
+      if (isRetryable && attempt < 3) {
+        const backoff = 500 * Math.pow(2, attempt); // 0.5s, 1s, 2s
+        console.warn("[translate-batch] retrying after backoff", { backoff, attempt: attempt + 1 });
+        await new Promise((resolve) => setTimeout(resolve, backoff));
+        return translateChunk(chunk, depth, attempt + 1);
+      }
+
+      return { ok: false, error: status ? `Upstream error ${status}: ${message}` : message };
     }
   };
 
