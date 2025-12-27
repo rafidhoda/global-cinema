@@ -1,4 +1,5 @@
-import { MovieListGate } from "@/components/MovieListGate";
+import { MovieAccess } from "@/components/MovieAccess";
+import { Movie, MovieMeta } from "@/types/movies";
 
 type MovieRow = {
   id: string;
@@ -7,21 +8,6 @@ type MovieRow = {
   poster_path: string | null;
   overview: string | null;
   external_link: string | null;
-};
-
-type Movie = {
-  id: string;
-  title: string;
-  release_year?: number | null;
-  poster_path?: string | null;
-  overview?: string | null;
-  external_link?: string | null;
-};
-
-type MovieMeta = {
-  release_year?: number | null;
-  poster_path?: string | null;
-  overview?: string | null;
 };
 
 const fetchMovieMeta = async (query: string): Promise<MovieMeta | null> => {
@@ -106,17 +92,8 @@ export default async function Home() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-black text-zinc-100">
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 py-12">
-        <header className="flex flex-col gap-3">
-          <h1 className="text-5xl font-semibold text-white">Global Cinema</h1>
-          <p className="text-lg text-zinc-400">Curated films by Rafid Hoda</p>
-        </header>
-
-        <main>
-          <MovieListGate results={results} />
-        </main>
-      </div>
+    <div className="relative min-h-screen bg-black text-zinc-100">
+      <MovieAccess results={results} />
     </div>
   );
 }
