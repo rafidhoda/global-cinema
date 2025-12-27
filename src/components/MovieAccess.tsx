@@ -12,6 +12,7 @@ type Props = {
 export function MovieAccess({ results }: Props) {
   const [password, setPassword] = useState("");
   const [unlocked, setUnlocked] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [openMovie, setOpenMovie] = useState<Movie | null>(null);
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadMessage, setUploadMessage] = useState<string>("");
@@ -28,7 +29,11 @@ export function MovieAccess({ results }: Props) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const saved = localStorage.getItem("gc_pass_ok");
-    if (saved === "true") setUnlocked(true);
+    const savedAdmin = localStorage.getItem("gc_admin_ok");
+    if (saved === "true" || savedAdmin === "true") {
+      setUnlocked(true);
+      setIsAdmin(savedAdmin === "true");
+    }
   }, []);
 
   useEffect(() => {
@@ -58,11 +63,23 @@ export function MovieAccess({ results }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === "hoda") {
+    if (password === "ThisIsRafidHoda!1991") {
       setUnlocked(true);
-      if (typeof window !== "undefined") localStorage.setItem("gc_pass_ok", "true");
+      setIsAdmin(true);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("gc_pass_ok", "true");
+        localStorage.setItem("gc_admin_ok", "true");
+      }
+    } else if (password === "hoda") {
+      setUnlocked(true);
+      setIsAdmin(false);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("gc_pass_ok", "true");
+        localStorage.removeItem("gc_admin_ok");
+      }
     } else {
       setUnlocked(false);
+      setIsAdmin(false);
     }
   };
 
@@ -70,7 +87,10 @@ export function MovieAccess({ results }: Props) {
     setUnlocked(false);
     setOpenMovie(null);
     setPassword("");
-    if (typeof window !== "undefined") localStorage.removeItem("gc_pass_ok");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("gc_pass_ok");
+      localStorage.removeItem("gc_admin_ok");
+    }
   };
 
   if (!unlocked) {
@@ -115,7 +135,7 @@ export function MovieAccess({ results }: Props) {
     <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-12 bg-black">
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h2 className="text-2xl font-semibold text-white">Library</h2>
+          <h2 className="text-2xl font-semibold text-white">{isAdmin ? "Welcome, Rafid" : "Library"}</h2>
           <p className="text-sm text-zinc-400">Browse and manage your curated films.</p>
         </div>
         <button
