@@ -17,6 +17,14 @@ export function MovieAccess({ results }: Props) {
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadMessage, setUploadMessage] = useState<string>("");
   const [englishUrl, setEnglishUrl] = useState<string | null>(null);
+  const [translateLang, setTranslateLang] = useState<string>("");
+  const [translating, setTranslating] = useState<boolean>(false);
+  const [translateProgress, setTranslateProgress] = useState<number>(0);
+  const [translateError, setTranslateError] = useState<string | null>(null);
+  const [translatedUrl, setTranslatedUrl] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState<boolean>(false);
+  const [previewText, setPreviewText] = useState<string>("");
+  const [modelPreference, setModelPreference] = useState<"auto" | "openai" | "claude">("auto");
   const posters = useMemo(
     () =>
       results
@@ -87,9 +95,75 @@ export function MovieAccess({ results }: Props) {
     setUnlocked(false);
     setOpenMovie(null);
     setPassword("");
+    setTranslateLang("");
+    setTranslating(false);
+    setTranslateProgress(0);
+    setTranslateError(null);
+    if (translatedUrl) URL.revokeObjectURL(translatedUrl);
+    setTranslatedUrl(null);
+    setPreviewText("");
+    setShowPreview(false);
     if (typeof window !== "undefined") {
       localStorage.removeItem("gc_pass_ok");
       localStorage.removeItem("gc_admin_ok");
+    }
+  };
+
+  const chunkArray = (arr: string[], size: number) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      chunks.push(arr.slice(i, i + size));
+    }
+    return chunks;
+  };
+
+  const handleTranslate = async () => {
+    if (!englishUrl || !openMovie) return;
+    const targetLanguage = translateLang.trim() || "Polish";
+    setTranslateError(null);
+    setTranslating(true);
+    setTranslateProgress(0);
+    setTranslatedUrl(null);
+    setPreviewText("");
+    try {
+      const res = await fetch(englishUrl);
+      if (!res.ok) throw new Error("Could not download English subtitles");
+      const text = await res.text();
+      const lines = text.split(/\r?\n/);
+      const chunks = chunkArray(lines, 60);
+      const translatedLines: string[] = [];
+
+      for (let i = 0; i < chunks.length; i++) {
+        const body = {
+          lines: chunks[i],
+          targetLanguage,
+          movieTitle: openMovie.title,
+          movieYear: openMovie.release_year ? String(openMovie.release_year) : undefined,
+          movieOverview: openMovie.overview ?? undefined,
+          modelPreference,
+        };
+        const resp = await fetch("/api/translate-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data?.ok || !Array.isArray(data.lines)) {
+          throw new Error(data?.error || "Translation failed");
+        }
+        translatedLines.push(...data.lines);
+        setTranslateProgress((i + 1) / chunks.length);
+        setPreviewText(translatedLines.join("\n"));
+      }
+
+      const out = translatedLines.join("\n");
+      const blob = new Blob([out], { type: "application/x-subrip" });
+      const url = URL.createObjectURL(blob);
+      setTranslatedUrl(url);
+    } catch (err: any) {
+      setTranslateError(err?.message || "Translation failed");
+    } finally {
+      setTranslating(false);
     }
   };
 
@@ -278,6 +352,78 @@ export function MovieAccess({ results }: Props) {
                           Polish (coming soon)
                         </button>
                       </div>
+                      {englishUrl && (
+                        <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                          {isAdmin && (
+                            <div className="flex flex-col gap-2 text-xs text-zinc-300">
+                              <span className="text-zinc-400">Model preference (admin)</span>
+                              <select
+                                value={modelPreference}
+                                onChange={(e) =>
+                                  setModelPreference(e.target.value as "auto" | "openai" | "claude")
+                                }
+                                className="w-full rounded border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none"
+                              >
+                                <option value="auto">Auto (OpenAI then Claude)</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="claude">Claude</option>
+                              </select>
+                            </div>
+                          )}
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                            <input
+                              type="text"
+                              value={translateLang}
+                              onChange={(e) => setTranslateLang(e.target.value)}
+                              className="flex-1 rounded border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none"
+                              placeholder="Target language (e.g., Polish, Norwegian)"
+                              disabled={translating}
+                            />
+                            <button
+                              type="button"
+                              onClick={handleTranslate}
+                              disabled={translating}
+                              className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {translating ? "Translating..." : "Translate Subtitles"}
+                            </button>
+                          </div>
+                          {translating && (
+                            <div className="w-full rounded bg-zinc-800">
+                              <div
+                                className="h-2 rounded bg-emerald-500 transition-all"
+                                style={{ width: `${Math.floor(translateProgress * 100)}%` }}
+                              />
+                            </div>
+                          )}
+                          {translateError && <div className="text-xs text-red-400">{translateError}</div>}
+                          {previewText && (
+                            <div className="space-y-2">
+                              <button
+                                type="button"
+                                onClick={() => setShowPreview((v) => !v)}
+                                className="text-emerald-400 underline text-xs"
+                              >
+                                {showPreview ? "Hide live translation" : "Show live translation"}
+                              </button>
+                              {showPreview && (
+                                <div className="rounded border border-zinc-800 bg-zinc-900 p-2 text-[11px] text-zinc-100 max-h-48 overflow-auto whitespace-pre-wrap">
+                                  {previewText}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {translatedUrl && (
+                            <a
+                              href={translatedUrl}
+                              download={`${openMovie.title || "subtitles"}-${translateLang || "translated"}.srt`}
+                              className="inline-flex items-center text-emerald-400 underline"
+                            >
+                              Download translated subtitles
+                            </a>
+                          )}
+                        </div>
+                      )}
                       {isAdmin && (
                         <div className="flex flex-col gap-2">
                           <label className="text-xs text-zinc-400">Upload English subtitles (.srt)</label>

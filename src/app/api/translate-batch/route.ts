@@ -44,6 +44,7 @@ Input is an array of raw subtitle lines (SRT-style). Preserve structure exactly:
 - Do NOT add, remove, merge, split, reorder, trim, wrap, or reflow lines; keep spacing and tags exactly as provided.
 - Respond as strict JSON: {"lines":["line1","line2",...]} with the SAME length as input.
 If you cannot preserve the exact line count, return an error message instead of altering structure.
+Return ONLY raw JSON (no markdown fences, no code blocks, no additional text).
 `.trim();
 
 export async function POST(request: Request) {
@@ -86,6 +87,18 @@ export async function POST(request: Request) {
     depth: number,
     attempt: number = 0
   ): Promise<{ ok: true; lines: string[] } | { ok: false; error: string }> => {
+    const parseJsonContent = (raw: string) => {
+      const trimmed = raw.trim();
+      if (trimmed.startsWith("```")) {
+        const withoutFence = trimmed
+          .replace(/^```[a-zA-Z]*\n?/, "")
+          .replace(/```$/, "")
+          .trim();
+        return JSON.parse(withoutFence);
+      }
+      return JSON.parse(trimmed);
+    };
+
     try {
       console.log("[translate-batch] start", {
         model,
@@ -104,7 +117,7 @@ export async function POST(request: Request) {
           {
             role: "user",
             content: JSON.stringify({
-              instructions: `Translate lines to ${targetLanguage}; preserve indices/timecodes/blank/markup lines verbatim; output JSON with the same number of lines.`,
+              instructions: `Translate lines to ${targetLanguage}; preserve indices/timecodes/blank/markup lines verbatim; output JSON with the same number of lines. Respond ONLY with raw JSON (no markdown).`,
               expectedCount: chunk.length,
               movie: {
                 title: movieTitle ?? null,
@@ -121,7 +134,7 @@ export async function POST(request: Request) {
 
       let parsed: { lines?: string[] };
       try {
-        parsed = JSON.parse(content);
+        parsed = parseJsonContent(content);
       } catch {
         console.error("[translate-batch] Non-JSON response", {
           content,
@@ -196,8 +209,19 @@ export async function POST(request: Request) {
     chunk: string[]
   ): Promise<{ ok: true; lines: string[]; modelUsed: string } | { ok: false; error: string }> => {
     if (!anthropic) return { ok: false, error: "Claude client not configured" };
+    const parseJsonContent = (raw: string) => {
+      const trimmed = raw.trim();
+      if (trimmed.startsWith("```")) {
+        const withoutFence = trimmed
+          .replace(/^```[a-zA-Z]*\n?/, "")
+          .replace(/```$/, "")
+          .trim();
+        return JSON.parse(withoutFence);
+      }
+      return JSON.parse(trimmed);
+    };
     const prompt = JSON.stringify({
-      instructions: `Translate lines to ${targetLanguage}; preserve indices/timecodes/blank/markup lines verbatim; output JSON with the same number of lines.`,
+      instructions: `Translate lines to ${targetLanguage}; preserve indices/timecodes/blank/markup lines verbatim; output JSON with the same number of lines. Respond ONLY with raw JSON (no markdown).`,
       expectedCount: chunk.length,
       movie: {
         title: movieTitle ?? null,
@@ -213,7 +237,7 @@ export async function POST(request: Request) {
           model: claudeModel,
           temperature: 0.1,
           max_tokens: 4000,
-          system: `${SYSTEM_PROMPT}\nReturn strictly JSON: {"lines":["line1","line2",...]}`,
+          system: `${SYSTEM_PROMPT}\nReturn strictly JSON: {"lines":["line1","line2",...]}. Respond ONLY with raw JSON (no markdown fences).`,
           messages: [{ role: "user", content: prompt }],
         });
 
@@ -222,7 +246,7 @@ export async function POST(request: Request) {
 
         let parsed: { lines?: string[] };
         try {
-          parsed = JSON.parse(content);
+          parsed = parseJsonContent(content);
         } catch {
           console.error("[translate-batch] Claude non-JSON response", { content, claudeModel });
           continue;
@@ -251,29 +275,60 @@ export async function POST(request: Request) {
     return { ok: false, error: "Claude models unavailable (not_found)" };
   };
 
-  // Model routing
+  // Model routing with immediate fallback
   let result: { ok: true; lines: string[]; modelUsed?: string } | { ok: false; error: string };
   let modelUsed = model;
 
+  const tryOpenAI = async () => {
+    const r = await translateChunkOpenAI(lines, 0);
+    return { ...r, modelUsed: model };
+  };
+
+  const tryClaude = async () => {
+    const r = await translateChunkClaude(lines);
+    return { ...r, modelUsed: r.ok ? r.modelUsed || CLAUDE_MODELS[0] : CLAUDE_MODELS[0] };
+  };
+
   if (modelPreference === "claude") {
-    result = await translateChunkClaude(lines);
-    modelUsed = result.ok ? result.modelUsed || CLAUDE_MODELS[0] : CLAUDE_MODELS[0];
+    const primary = await tryClaude();
+    if (primary.ok) {
+      result = primary;
+      modelUsed = primary.modelUsed || CLAUDE_MODELS[0];
+    } else {
+      const fallback = await tryOpenAI();
+      if (fallback.ok) {
+        result = fallback;
+        modelUsed = model;
+      } else {
+        result = primary;
+        modelUsed = primary.modelUsed || CLAUDE_MODELS[0];
+      }
+    }
   } else if (modelPreference === "openai") {
-    result = await translateChunkOpenAI(lines, 0);
-    modelUsed = model;
-  } else {
-    // auto: try OpenAI then Claude
-    const openaiResult = await translateChunkOpenAI(lines, 0);
-    if (openaiResult.ok) {
-      result = openaiResult;
+    const primary = await tryOpenAI();
+    if (primary.ok) {
+      result = primary;
       modelUsed = model;
     } else {
-      const claudeResult = await translateChunkClaude(lines);
-      result = claudeResult;
-      modelUsed = claudeResult.ok ? claudeResult.modelUsed || CLAUDE_MODELS[0] : model;
-      if (!claudeResult.ok) {
-        return NextResponse.json({ ok: false, error: claudeResult.error }, { status: 500 });
+      const fallback = await tryClaude();
+      if (fallback.ok) {
+        result = fallback;
+        modelUsed = fallback.modelUsed || CLAUDE_MODELS[0];
+      } else {
+        result = primary;
+        modelUsed = model;
       }
+    }
+  } else {
+    // auto: prefer openai, fallback to claude
+    const primary = await tryOpenAI();
+    if (primary.ok) {
+      result = primary;
+      modelUsed = model;
+    } else {
+      const fallback = await tryClaude();
+      result = fallback.ok ? fallback : primary;
+      modelUsed = fallback.ok ? fallback.modelUsed || CLAUDE_MODELS[0] : model;
     }
   }
 
