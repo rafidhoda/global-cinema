@@ -45,6 +45,8 @@ Input is an array of raw subtitle lines (SRT-style). Preserve structure exactly:
 - Respond as strict JSON: {"lines":["line1","line2",...]} with the SAME length as input.
 If you cannot preserve the exact line count, return an error message instead of altering structure.
 Return ONLY raw JSON (no markdown fences, no code blocks, no additional text).
+
+FILLER WORDS: If the source contains filler words (e.g., "uh", "um", "you know", "like", "well", "I mean"), translate them in a clean way so the viewer can read the result like natural movie subtitles. Omit unnecessary fillers or render them in a natural equivalent in the target language—prioritize readability over verbatim transcription.
 `.trim();
 
 export async function POST(request: Request) {
