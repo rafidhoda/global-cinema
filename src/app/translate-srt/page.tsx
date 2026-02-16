@@ -123,10 +123,15 @@ export default function TranslateSrtPage() {
 
     const buffer: string[] = [];
 
+    const REQUEST_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes per chunk (retries can be slow)
+
     for (let i = 0; i < chunks; i += 1) {
       const slice = lines.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
 
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
         const response = await fetch("/api/translate-batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -135,7 +140,10 @@ export default function TranslateSrtPage() {
             targetLanguage: targetLang.label,
             modelPreference: "auto",
           }),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
         const data = await response.json();
 
         if (!response.ok || !data.ok || !Array.isArray(data.lines)) {
@@ -154,7 +162,12 @@ export default function TranslateSrtPage() {
           message: `Translated chunk ${i + 1} of ${chunks} (${processed}/${total} lines)`,
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Translation failed";
+        const isAbort = err instanceof Error && err.name === "AbortError";
+        const message = isAbort
+          ? "Request timed out. This chunk took too long; try again or use a smaller file."
+          : err instanceof Error
+            ? err.message
+            : "Translation failed";
         setError(message);
         setTranslateState("error");
         setProgress((prev) => ({ ...prev, message }));

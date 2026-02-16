@@ -1,99 +1,18 @@
-import { MovieAccess } from "@/components/MovieAccess";
-import { Movie, MovieMeta } from "@/types/movies";
+import { MovieOfTheWeek } from "@/components/MovieOfTheWeek";
 
-type MovieRow = {
-  id: string;
-  title: string;
-  release_year: number | null;
-  poster_path: string | null;
-  overview: string | null;
-  external_link: string | null;
-};
+const VIDEO_URL =
+  "https://ytsbpnzahbtxpojtsjfh.supabase.co/storage/v1/object/public/movies/Taare%20Zameen%20Par%20(2007).mp4";
 
-const fetchMovieMeta = async (query: string): Promise<MovieMeta | null> => {
-  const token = process.env.TMDB_READ_TOKEN;
-  const apiKey = process.env.TMDB_API_KEY;
-  if (!token && !apiKey) return null;
+const SUBTITLE_SRT_URL =
+  "https://ytsbpnzahbtxpojtsjfh.supabase.co/storage/v1/object/public/movies/Taare%20Zameen%20Par%20(2007)%20-%20English.srt";
 
-  const url = new URL("https://api.themoviedb.org/3/search/movie");
-  url.searchParams.set("query", query);
-  url.searchParams.set("language", "en-US");
-  url.searchParams.set("include_adult", "false");
-  if (!token && apiKey) {
-    url.searchParams.set("api_key", apiKey);
-  }
+// Serve as VTT via API so <track> works in all browsers (they require WebVTT, not raw SRT)
+const SUBTITLE_URL = `/api/subtitles/vtt?url=${encodeURIComponent(SUBTITLE_SRT_URL)}`;
 
-  const res = await fetch(url.toString(), {
-    headers: token
-      ? {
-          accept: "application/json",
-          Authorization: `Bearer ${token}`,
-        }
-      : { accept: "application/json" },
-    next: { revalidate: 60 * 60 * 24 },
-  });
-
-  if (!res.ok) return null;
-  const data = await res.json();
-  const first = Array.isArray(data.results) && data.results.length > 0 ? data.results[0] : null;
-  if (!first) return null;
-  return {
-    release_year: first.release_date ? Number(first.release_date.slice(0, 4)) : null,
-    poster_path: first.poster_path,
-    overview: first.overview,
-  };
-};
-
-export default async function Home() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  let rows: MovieRow[] = [];
-  if (supabaseUrl && supabaseKey) {
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/curated_movies?select=id,title,release_year,poster_path,overview,external_link`,
-      {
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-      },
-        cache: "no-store",
-      }
-    );
-    if (res.ok) {
-      rows = (await res.json()) as MovieRow[];
-    }
-  }
-
-  const results = await Promise.all(
-    rows.map(async (row) => {
-      let merged: Movie = {
-        id: row.id,
-        title: row.title,
-        release_year: row.release_year,
-        poster_path: row.poster_path,
-        overview: row.overview,
-        external_link: row.external_link,
-      };
-      // backfill from TMDB if missing poster/overview
-      if (!row.poster_path || !row.overview) {
-        const fallback = await fetchMovieMeta(row.title);
-        if (fallback) {
-          merged = {
-            ...merged,
-            poster_path: merged.poster_path ?? fallback.poster_path ?? null,
-            overview: merged.overview ?? fallback.overview ?? null,
-            release_year: merged.release_year ?? fallback.release_year ?? null,
-          };
-        }
-      }
-      return merged;
-    })
-  );
-
+export default function Home() {
   return (
-    <div className="relative min-h-screen bg-black text-zinc-100">
-      <MovieAccess results={results} />
+    <div className="min-h-screen bg-black">
+      <MovieOfTheWeek videoUrl={VIDEO_URL} subtitleUrl={SUBTITLE_URL} />
     </div>
   );
 }
