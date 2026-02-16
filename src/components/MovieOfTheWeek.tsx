@@ -15,7 +15,7 @@ const CREATE_LANGS = [
 ] as const;
 
 /** Treat these as complete even if cue count disagrees (e.g. list API cache). */
-const MANUALLY_COMPLETE_SLUGS = new Set(["polish"]);
+const MANUALLY_COMPLETE_SLUGS = new Set(["polish", "norwegian"]);
 
 type Props = {
   videoUrl: string;
@@ -112,9 +112,11 @@ export function MovieOfTheWeek({
       if (t) t.mode = "disabled";
       setActiveSubtitle(null);
     } else {
-      for (const t of video.textTracks) {
-        t.mode = t.label === lang.label ? "showing" : "disabled";
-      }
+      // Disable all first, then enable only the first matching track (avoids double
+      // subtitles when both a programmatic track and a <track> exist for the same language)
+      for (const t of video.textTracks) t.mode = "disabled";
+      const firstMatch = Array.from(video.textTracks).find((t) => t.label === lang.label);
+      if (firstMatch) firstMatch.mode = "showing";
       setActiveSubtitle(lang.slug);
     }
   };
@@ -317,7 +319,7 @@ export function MovieOfTheWeek({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           {subtitleUrl && (
             <button
               type="button"
@@ -331,36 +333,6 @@ export function MovieOfTheWeek({
               English {activeSubtitle === "en" ? "✓" : ""}
             </button>
           )}
-          {englishSrtUrl && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setCreateOpen((o) => !o)}
-                disabled={createState === "running"}
-                className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-700 disabled:opacity-60"
-              >
-                {createState === "running" && creatingLang
-                  ? `Creating ${creatingLang} Subtitles`
-                  : "Create Subtitles"}
-              </button>
-              {createOpen && (
-                <div className="absolute left-0 top-full z-10 mt-2 flex flex-col rounded-lg border border-zinc-700 bg-zinc-900 py-2 shadow-xl">
-                  {CREATE_LANGS.map((lang) => (
-                    <button
-                      key={lang.slug}
-                      type="button"
-                      onClick={() => startCreateSubtitles(lang)}
-                      className="px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-800"
-                    >
-                      {lang.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
           {availableLanguages.map((lang) => {
             const isComplete =
               MANUALLY_COMPLETE_SLUGS.has(lang.slug) ||
@@ -405,6 +377,34 @@ export function MovieOfTheWeek({
             );
           })}
         </div>
+        {englishSrtUrl && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setCreateOpen((o) => !o)}
+              disabled={createState === "running"}
+              className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-700 disabled:opacity-60"
+            >
+              {createState === "running" && creatingLang
+                ? `Creating ${creatingLang} Subtitles`
+                : "Create Subtitles"}
+            </button>
+            {createOpen && (
+              <div className="absolute right-0 top-full z-10 mt-2 flex flex-col rounded-lg border border-zinc-700 bg-zinc-900 py-2 shadow-xl">
+                {CREATE_LANGS.map((lang) => (
+                  <button
+                    key={lang.slug}
+                    type="button"
+                    onClick={() => startCreateSubtitles(lang)}
+                    className="px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-800"
+                  >
+                    {lang.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {createState === "running" && (
