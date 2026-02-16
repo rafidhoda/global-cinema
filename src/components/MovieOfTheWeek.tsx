@@ -14,6 +14,9 @@ const CREATE_LANGS = [
   { label: "German", slug: "german" },
 ] as const;
 
+/** Treat these as complete even if cue count disagrees (e.g. list API cache). */
+const MANUALLY_COMPLETE_SLUGS = new Set(["polish"]);
+
 type Props = {
   videoUrl: string;
   subtitleUrl?: string;
@@ -360,9 +363,10 @@ export function MovieOfTheWeek({
         <div className="flex flex-wrap items-center gap-2">
           {availableLanguages.map((lang) => {
             const isComplete =
-              expectedCueCount != null &&
-              lang.cueCount != null &&
-              lang.cueCount >= expectedCueCount;
+              MANUALLY_COMPLETE_SLUGS.has(lang.slug) ||
+              (expectedCueCount != null &&
+                lang.cueCount != null &&
+                lang.cueCount >= expectedCueCount);
             const progressPct =
               !isComplete &&
               expectedCueCount != null &&
@@ -370,20 +374,21 @@ export function MovieOfTheWeek({
               lang.cueCount != null
                 ? Math.min(100, (lang.cueCount / expectedCueCount) * 100)
                 : null;
+            const isSelected = activeSubtitle === lang.slug;
             return (
               <button
                 key={lang.slug}
                 type="button"
                 onClick={() => handleRightSideLangClick(lang)}
-                className={`relative overflow-hidden rounded-lg px-4 py-2 text-sm font-medium text-zinc-300 transition hover:opacity-90 ${
-                  isComplete
-                    ? activeSubtitle === lang.slug
+                className={`relative overflow-hidden rounded-lg px-4 py-2 text-sm font-medium transition hover:opacity-90 ${
+                  isSelected
+                    ? isComplete
                       ? "bg-emerald-600 text-white"
-                      : "bg-zinc-800 hover:bg-zinc-700"
-                    : "bg-zinc-800"
+                      : "bg-zinc-800"
+                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
                 }`}
                 style={
-                  progressPct != null
+                  isSelected && progressPct != null
                     ? {
                         background: `linear-gradient(to right, #059669 0%, #059669 ${progressPct}%, #27272a ${progressPct}%, #27272a 100%)`,
                         color: "white",
@@ -394,7 +399,7 @@ export function MovieOfTheWeek({
                 <span className="relative z-10">
                   {lang.label}
                   {!isComplete && " (in progress)"}
-                  {activeSubtitle === lang.slug ? " ✓" : ""}
+                  {isComplete && isSelected ? " ✓" : ""}
                 </span>
               </button>
             );

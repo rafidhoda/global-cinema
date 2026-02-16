@@ -165,8 +165,8 @@ export async function POST(request: Request) {
           size: chunk.length,
         });
 
-        // Fallback: split and retry smaller batches to preserve structure
-        if (chunk.length > 1 && depth < 4) {
+        // Only split once (depth 0 -> 1) to avoid long request timeouts; then repair
+        if (chunk.length > 1 && depth < 1) {
           const mid = Math.floor(chunk.length / 2);
           const left = await translateChunkOpenAI(chunk.slice(0, mid), depth + 1);
           if (!left.ok) return left;
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
           return { ok: true, lines: [...left.lines, ...right.lines] };
         }
 
-        // Repair fallback: backfill missing or extra lines with originals to keep count
+        // Repair: backfill missing with originals so we return quickly and progress doesn't stall
         const repaired = Array.from({ length: chunk.length }, (_, idx) => {
           return translatedLines[idx] !== undefined ? translatedLines[idx] : chunk[idx];
         });
