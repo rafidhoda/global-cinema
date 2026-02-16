@@ -12,7 +12,12 @@ const SUBTITLE_URL = `/api/subtitles/vtt?url=${encodeURIComponent(SUBTITLE_SRT_U
 export default function Home() {
   return (
     <div className="min-h-screen bg-black">
-      <MovieOfTheWeek videoUrl={VIDEO_URL} subtitleUrl={SUBTITLE_URL} />
+      <MovieOfTheWeek
+        videoUrl={VIDEO_URL}
+        subtitleUrl={SUBTITLE_URL}
+        englishSrtUrl={SUBTITLE_SRT_URL}
+        headline="Taare Zameen Par (2007)"
+      />
     </div>
   );
 }
