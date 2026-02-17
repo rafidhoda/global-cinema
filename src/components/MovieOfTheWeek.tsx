@@ -108,15 +108,28 @@ export function MovieOfTheWeek({
     if (!video?.textTracks) return;
     const isCurrentlyActive = activeSubtitle === lang.slug;
     if (isCurrentlyActive) {
-      const t = Array.from(video.textTracks).find((tr) => tr.label === lang.label);
-      if (t) t.mode = "disabled";
+      const matches = Array.from(video.textTracks).filter((t) => t.label === lang.label);
+      matches.forEach((t) => { t.mode = "disabled"; });
       setActiveSubtitle(null);
     } else {
-      // Disable all first, then enable only the first matching track (avoids double
-      // subtitles when both a programmatic track and a <track> exist for the same language)
-      for (const t of video.textTracks) t.mode = "disabled";
-      const firstMatch = Array.from(video.textTracks).find((t) => t.label === lang.label);
-      if (firstMatch) firstMatch.mode = "showing";
+      const list = Array.from(video.textTracks);
+      list.forEach((t) => { t.mode = "disabled"; });
+      // Explicitly ensure English (index 0) is off when selecting another language
+      if (list.length > 0 && list[0].label === "English") list[0].mode = "disabled";
+      // Prefer last matching track (DOM <track> is usually the full file; programmatic can be partial)
+      const matches = list.filter((t) => t.label === lang.label);
+      const trackToShow = matches.length > 0 ? matches[matches.length - 1] : null;
+      if (trackToShow) {
+        trackToShow.mode = "showing";
+        // Safari/iOS sometimes only updates subtitle display after a tick
+        if (typeof requestAnimationFrame !== "undefined") {
+          requestAnimationFrame(() => {
+            list.forEach((t) => { t.mode = "disabled"; });
+            if (list[0].label === "English") list[0].mode = "disabled";
+            trackToShow.mode = "showing";
+          });
+        }
+      }
       setActiveSubtitle(lang.slug);
     }
   };

@@ -62,12 +62,13 @@ export async function GET(request: NextRequest) {
   }
 
   const text = await res.text();
-  const vtt = srtToVtt(text);
+  const vtt = srtToVtt(text).trimEnd() + "\n";
 
   return new NextResponse(vtt, {
     headers: {
       "Content-Type": "text/vtt; charset=utf-8",
       "Cache-Control": "public, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }
