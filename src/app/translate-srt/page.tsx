@@ -7,6 +7,7 @@ const CHUNK_SIZE = 150;
 const TARGET_LANGS = [
   { code: "pl-PL", label: "Polish" },
   { code: "no-NO", label: "Norwegian" },
+  { code: "lt-LT", label: "Lithuanian" },
   { code: "hi-IN", label: "Hindi" },
 ] as const;
 

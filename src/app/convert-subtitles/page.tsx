@@ -32,6 +32,7 @@ const TARGET_LANGS: TargetLang[] = [
   { code: "en-US", label: "English" },
   { code: "no-NO", label: "Norwegian" },
   { code: "pl-PL", label: "Polish" },
+  { code: "lt-LT", label: "Lithuanian" },
   { code: "hi-IN", label: "Hindi" },
   { code: "hi-Latn", label: "Hindi (English letters)" },
   { code: "ar-SA", label: "Arabic" },

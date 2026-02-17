@@ -12,6 +12,7 @@ const CREATE_LANGS = [
   { label: "Polish", slug: "polish" },
   { label: "French", slug: "french" },
   { label: "German", slug: "german" },
+  { label: "Lithuanian", slug: "lithuanian" },
 ] as const;
 
 /** Treat these as complete even if cue count disagrees (e.g. list API cache). */
