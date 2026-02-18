@@ -8,6 +8,10 @@ const TARGET_LANGS = [
   { code: "pl-PL", label: "Polish" },
   { code: "no-NO", label: "Norwegian" },
   { code: "lt-LT", label: "Lithuanian" },
+  { code: "da-DK", label: "Danish" },
+  { code: "sv-SE", label: "Swedish" },
+  { code: "ru-RU", label: "Russian" },
+  { code: "bn-IN", label: "Bengali" },
   { code: "hi-IN", label: "Hindi" },
 ] as const;
 

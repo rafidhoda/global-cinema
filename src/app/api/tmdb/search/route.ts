@@ -3,11 +3,11 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY;
-const TMDB_READ_TOKEN = process.env.TMDB_READ_TOKEN;
+const TMDB_API_KEY = process.env.TMDB_API_KEY?.trim() ?? "";
+const TMDB_READ_TOKEN = process.env.TMDB_READ_TOKEN?.trim() ?? "";
 
 export async function POST(req: Request) {
-  if (!TMDB_API_KEY && !TMDB_READ_TOKEN) {
+  if (!TMDB_API_KEY?.length && !TMDB_READ_TOKEN?.length) {
     console.error("[tmdb] credentials missing");
     return NextResponse.json(
       { ok: false, error: "TMDB credentials missing" },

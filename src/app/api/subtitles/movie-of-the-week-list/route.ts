@@ -9,15 +9,15 @@ const bucket = process.env.SUPABASE_MOVIES_BUCKET || "movies";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const PREFIX = "movie-of-the-week/";
-const FILE_PREFIX = "taare-zameen-par-2007-";
+/** One folder per movie: by-movie/{movieSlug}/{langSlug}.srt */
+const BY_MOVIE_PREFIX = "by-movie/";
 const FILE_SUFFIX = ".srt";
 
 function slugToLabel(slug: string): string {
   return slug.charAt(0).toUpperCase() + slug.slice(1);
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   if (!supabaseUrl || !serviceKey) {
     return NextResponse.json(
       { error: "Supabase not configured" },
@@ -25,26 +25,37 @@ export async function GET() {
     );
   }
 
+  const { searchParams } = new URL(req.url);
+  const movieSlug = searchParams.get("movieSlug")?.trim();
+  if (!movieSlug) {
+    return NextResponse.json(
+      { error: "Missing movieSlug" },
+      { status: 400 }
+    );
+  }
+
   const supabase = createClient(supabaseUrl, serviceKey);
+  const folder = `${BY_MOVIE_PREFIX}${movieSlug}`;
   const { data: files, error } = await supabase.storage
     .from(bucket)
-    .list("movie-of-the-week", { limit: 50 });
+    .list(folder, { limit: 50 });
 
   if (error) {
-    console.error("[movie-of-the-week-list]", error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    // Folder may not exist yet (no created subtitles for this movie) — return empty
+    console.warn("[movie-of-the-week-list] list error (folder may not exist)", {
+      folder,
+      message: error.message,
+    });
+    return NextResponse.json({ languages: [] });
   }
 
   const languages: { label: string; slug: string; url: string; cueCount: number }[] = [];
 
   for (const file of files ?? []) {
-    if (!file.name?.startsWith(FILE_PREFIX) || !file.name?.endsWith(FILE_SUFFIX)) continue;
-    const slug = file.name.slice(FILE_PREFIX.length, -FILE_SUFFIX.length);
+    if (!file.name?.endsWith(FILE_SUFFIX)) continue;
+    const slug = file.name.slice(0, -FILE_SUFFIX.length);
     if (!slug) continue;
-    const path = `${PREFIX}${file.name}`;
+    const path = `${folder}/${file.name}`;
     const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path);
     const url = pub?.publicUrl ?? "";
     let cueCount = 0;

@@ -13,12 +13,17 @@ const CREATE_LANGS = [
   { label: "French", slug: "french" },
   { label: "German", slug: "german" },
   { label: "Lithuanian", slug: "lithuanian" },
+  { label: "Danish", slug: "danish" },
+  { label: "Swedish", slug: "swedish" },
+  { label: "Russian", slug: "russian" },
+  { label: "Bengali", slug: "bengali" },
 ] as const;
 
 /** Treat these as complete even if cue count disagrees (e.g. list API cache). */
 const MANUALLY_COMPLETE_SLUGS = new Set(["polish", "norwegian"]);
 
 type Props = {
+  movieSlug: string;
   videoUrl: string;
   subtitleUrl?: string;
   englishSrtUrl?: string;
@@ -26,6 +31,7 @@ type Props = {
 };
 
 export function MovieOfTheWeek({
+  movieSlug,
   videoUrl,
   subtitleUrl,
   englishSrtUrl,
@@ -67,8 +73,11 @@ export function MovieOfTheWeek({
   }, [englishSrtUrl]);
 
   const fetchAvailableLanguages = async () => {
+    if (!movieSlug) return;
     try {
-      const res = await fetch("/api/subtitles/movie-of-the-week-list");
+      const res = await fetch(
+        `/api/subtitles/movie-of-the-week-list?movieSlug=${encodeURIComponent(movieSlug)}`
+      );
       if (res.ok) {
         const data = await res.json();
         setAvailableLanguages(data?.languages ?? []);
@@ -80,7 +89,7 @@ export function MovieOfTheWeek({
 
   useEffect(() => {
     fetchAvailableLanguages();
-  }, []);
+  }, [movieSlug]);
 
   useEffect(() => {
     if (createState === "done") {
@@ -182,7 +191,7 @@ export function MovieOfTheWeek({
       let existingContent = "";
 
       const existingRes = await fetch(
-        `/api/subtitles/upload-movie-of-the-week?language=${encodeURIComponent(lang.label)}`
+        `/api/subtitles/upload-movie-of-the-week?movieSlug=${encodeURIComponent(movieSlug)}&language=${encodeURIComponent(lang.label)}`
       );
       if (existingRes.ok) {
         existingContent = await existingRes.text();
@@ -250,7 +259,11 @@ export function MovieOfTheWeek({
         const uploadRes = await fetch("/api/subtitles/upload-movie-of-the-week", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ language: lang.label, content: fullSrt }),
+          body: JSON.stringify({
+            movieSlug,
+            language: lang.label,
+            content: fullSrt,
+          }),
         });
         const uploadData = await uploadRes.json();
         if (uploadRes.ok && uploadData?.ok && uploadData?.url) {

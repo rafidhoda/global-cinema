@@ -8,19 +8,19 @@ const bucket = process.env.SUPABASE_MOVIES_BUCKET || "movies";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const SLUG = "taare-zameen-par-2007";
+/** Path: by-movie/{movieSlug}/{langSlug}.srt — one folder per movie. */
+const BY_MOVIE_PREFIX = "by-movie/";
 
 function slugForLanguage(language: string): string {
-  const slug = language.toLowerCase().replace(/\s+/g, "-");
-  return slug;
+  return language.toLowerCase().replace(/\s+/g, "-");
+}
+
+function pathFor(movieSlug: string, langSlug: string): string {
+  return `${BY_MOVIE_PREFIX}${movieSlug}/${langSlug}.srt`;
 }
 
 /** GET: fetch existing subtitle file for a language (for resume). Returns 404 if none. */
 export async function GET(req: Request) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const bucketName = process.env.SUPABASE_MOVIES_BUCKET || "movies";
-
   if (!supabaseUrl || !serviceKey) {
     return NextResponse.json(
       { error: "Supabase not configured" },
@@ -29,16 +29,20 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
+  const movieSlug = searchParams.get("movieSlug")?.trim();
   const language = searchParams.get("language")?.trim();
-  if (!language) {
-    return NextResponse.json({ error: "Missing language" }, { status: 400 });
+  if (!movieSlug || !language) {
+    return NextResponse.json(
+      { error: "Missing movieSlug or language" },
+      { status: 400 }
+    );
   }
 
   const langSlug = slugForLanguage(language);
-  const path = `movie-of-the-week/${SLUG}-${langSlug}.srt`;
+  const path = pathFor(movieSlug, langSlug);
 
   const supabase = createClient(supabaseUrl, serviceKey);
-  const { data, error } = await supabase.storage.from(bucketName).download(path);
+  const { data, error } = await supabase.storage.from(bucket).download(path);
 
   if (error || !data) {
     return new NextResponse(null, { status: 404 });
@@ -63,7 +67,7 @@ export async function POST(req: Request) {
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  let body: { language: string; content: string };
+  let body: { movieSlug?: string; language: string; content: string };
   try {
     body = await req.json();
   } catch {
@@ -73,18 +77,19 @@ export async function POST(req: Request) {
     );
   }
 
+  const movieSlug = body.movieSlug?.trim();
   const language = body.language?.trim();
   const content = typeof body.content === "string" ? body.content : "";
 
-  if (!language) {
+  if (!movieSlug || !language) {
     return NextResponse.json(
-      { ok: false, error: "language is required" },
+      { ok: false, error: "movieSlug and language are required" },
       { status: 400 }
     );
   }
 
   const langSlug = slugForLanguage(language);
-  const path = `movie-of-the-week/${SLUG}-${langSlug}.srt`;
+  const path = pathFor(movieSlug, langSlug);
 
   const buffer = Buffer.from(content, "utf-8");
 
