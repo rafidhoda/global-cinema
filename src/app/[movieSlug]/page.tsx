@@ -15,7 +15,7 @@ export default async function MoviePage({ params }: Props) {
         <p className="text-zinc-500">
           {movie.title} ({movie.year}) — coming soon
         </p>
-        <Link href="/" className="text-sm text-emerald-400 hover:underline">
+        <Link href="/" className="cursor-pointer text-sm text-emerald-400 hover:underline">
           ← Back to movies
         </Link>
       </div>
@@ -26,7 +26,7 @@ export default async function MoviePage({ params }: Props) {
       <div className="mx-auto max-w-6xl px-4 pt-4">
         <Link
           href="/"
-          className="text-sm text-zinc-500 hover:text-white"
+          className="cursor-pointer text-sm text-zinc-500 hover:text-white"
         >
           ← Back to movies
         </Link>

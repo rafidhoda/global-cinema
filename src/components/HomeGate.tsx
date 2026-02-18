@@ -88,7 +88,7 @@ export function HomeGate() {
           )}
           <button
             type="submit"
-            className="w-full rounded-lg bg-emerald-600 py-3 font-medium text-white transition hover:bg-emerald-500"
+            className="w-full cursor-pointer rounded-lg bg-emerald-600 py-3 font-medium text-white transition hover:bg-emerald-500"
           >
             Enter
           </button>
@@ -103,7 +103,7 @@ export function HomeGate() {
         <button
           type="button"
           onClick={logout}
-          className="text-sm text-zinc-400 underline transition hover:text-zinc-300"
+          className="cursor-pointer text-sm text-zinc-400 underline transition hover:text-zinc-300"
         >
           Log out
         </button>
@@ -118,7 +118,7 @@ export function HomeGate() {
             <Link
               key={movie.slug}
               href={`/${movie.slug}`}
-              className="group block overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition hover:border-zinc-600"
+              className="group block cursor-pointer overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition hover:border-zinc-600"
             >
               <div className="aspect-[2/3] overflow-hidden bg-zinc-800">
                 {/* eslint-disable-next-line @next/next/no-img-element */}

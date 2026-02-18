@@ -24,3 +24,13 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Clickable elements show pointer cursor */
+button,
+a,
+[role="button"],
+input[type="submit"],
+input[type="button"],
+[type="button"] {
+  cursor: pointer;
+}
