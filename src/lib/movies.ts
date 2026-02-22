@@ -37,7 +37,7 @@ export const MOVIES: Movie[] = [
     subtitleUrl: `/api/subtitles/vtt?url=${encodeURIComponent(TZP_ENGLISH_SRT)}`,
     sneakPeekStartSeconds: 6560,
     sneakPeekEndSeconds: 6620,
-    sneakPeekCtaSeekToSeconds: 0,
+    sneakPeekCtaSeekToSeconds: 121,
   },
   {
     slug: "padman-2018",

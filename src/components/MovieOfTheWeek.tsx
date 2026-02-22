@@ -77,48 +77,12 @@ export function MovieOfTheWeek({
   const [activeSubtitle, setActiveSubtitle] = useState<"en" | string | null>(null);
   const [expectedCueCount, setExpectedCueCount] = useState<number | null>(null);
   const hasAutoSelectedRef = useRef(false);
-  const [showSneakPeekCta, setShowSneakPeekCta] = useState(false);
   const [sneakPeekButtonRevealed, setSneakPeekButtonRevealed] = useState(false);
   const sneakPeekRevealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [viewerId, setViewerId] = useState<string | null>(null);
-  const [resumePosition, setResumePosition] = useState<number | null>(null);
   const [hasClickedWatch, setHasClickedWatch] = useState(false);
   const hasAppliedInitialPositionRef = useRef(false);
 
-  const hasSneakPeek =
-    typeof sneakPeekStartSeconds === "number" &&
-    typeof sneakPeekEndSeconds === "number" &&
-    sneakPeekEndSeconds > sneakPeekStartSeconds;
-
-  // Get or create viewer id (localStorage) and fetch resume position from Supabase
-  useEffect(() => {
-    if (typeof window === "undefined" || !movieSlug) return;
-    const key = "global-cinema-viewer-id";
-    let id = localStorage.getItem(key);
-    if (!id) {
-      id = crypto.randomUUID?.() ?? `v-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      localStorage.setItem(key, id);
-    }
-    setViewerId(id);
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(
-          `/api/watch-progress?movieSlug=${encodeURIComponent(movieSlug)}&viewerId=${encodeURIComponent(id!)}`
-        );
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        if (cancelled) return;
-        setResumePosition(typeof data.positionSeconds === "number" ? data.positionSeconds : 0);
-      } catch {
-        if (!cancelled) setResumePosition(0);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [movieSlug]);
+  const hasWatchButton = typeof sneakPeekCtaSeekToSeconds === "number";
 
   useEffect(() => {
     if (!englishSrtUrl?.trim()) return;
@@ -198,117 +162,39 @@ export function MovieOfTheWeek({
     }
   }, [isAdmin, userNativeLanguageSlug, availableLanguages, subtitleUrl]);
 
+  // Reveal Watch button after a short delay
   useEffect(() => {
-    if (!hasSneakPeek || !videoRef.current) return;
-    const video = videoRef.current;
-    const onTimeUpdate = () => {
-      const t = video.currentTime;
-      const inRange = t >= sneakPeekStartSeconds! && t <= sneakPeekEndSeconds!;
-      setShowSneakPeekCta(inRange);
-    };
-    video.addEventListener("timeupdate", onTimeUpdate);
-    onTimeUpdate();
-    return () => video.removeEventListener("timeupdate", onTimeUpdate);
-  }, [hasSneakPeek, sneakPeekStartSeconds, sneakPeekEndSeconds]);
-
-  // Reveal Watch button after a short delay (when in sneak peek range or when showing overlay until user clicks)
-  useEffect(() => {
-    if (!hasSneakPeek || !letsGoLabel) return;
+    if (!hasWatchButton || !letsGoLabel) return;
     if (sneakPeekRevealTimeoutRef.current) clearTimeout(sneakPeekRevealTimeoutRef.current);
     sneakPeekRevealTimeoutRef.current = setTimeout(() => {
       setSneakPeekButtonRevealed(true);
       sneakPeekRevealTimeoutRef.current = null;
-    }, 1000);
+    }, 500);
     return () => {
       if (sneakPeekRevealTimeoutRef.current) {
         clearTimeout(sneakPeekRevealTimeoutRef.current);
         sneakPeekRevealTimeoutRef.current = null;
       }
     };
-  }, [hasSneakPeek, letsGoLabel]);
+  }, [hasWatchButton, letsGoLabel]);
 
-  // When video is ready and we have resume data, seek to initial position (resume or sneak peek start) and autoplay
+  // On load: seek to 2:01 (or configured time) and pause; user clicks "Watch video" to resume
   useEffect(() => {
     const video = videoRef.current;
     if (
       !video ||
       !videoReady ||
-      resumePosition === null ||
+      !hasWatchButton ||
       hasAppliedInitialPositionRef.current
     )
       return;
-    const initialSeconds =
-      resumePosition > 0 ? resumePosition : (sneakPeekStartSeconds ?? 0);
     hasAppliedInitialPositionRef.current = true;
-    video.currentTime = initialSeconds;
-    video.play().catch(() => {});
-  }, [videoReady, resumePosition, sneakPeekStartSeconds]);
+    video.currentTime = sneakPeekCtaSeekToSeconds!;
+  }, [videoReady, hasWatchButton, sneakPeekCtaSeekToSeconds]);
 
-  const saveProgress = useRef(() => {
-    const video = videoRef.current;
-    if (!viewerId || !movieSlug || !video) return;
-    const position = Math.floor(video.currentTime);
-    fetch("/api/watch-progress", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        movieSlug,
-        viewerId,
-        positionSeconds: position,
-      }),
-    }).catch(() => {});
-  });
-
-  saveProgress.current = () => {
-    const video = videoRef.current;
-    if (!viewerId || !movieSlug || !video) return;
-    const position = Math.floor(video.currentTime);
-    fetch("/api/watch-progress", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        movieSlug,
-        viewerId,
-        positionSeconds: position,
-      }),
-    }).catch(() => {});
-  };
-
-  // Persist playback position to Supabase every 15 seconds
-  useEffect(() => {
-    if (!viewerId || !movieSlug) return;
-    const interval = setInterval(() => {
-      const video = videoRef.current;
-      if (!video || video.paused || video.ended) return;
-      saveProgress.current();
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [viewerId, movieSlug]);
-
-  // Save position when leaving the page or pausing
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !viewerId || !movieSlug) return;
-    const onPause = () => saveProgress.current();
-    const onBeforeUnload = () => saveProgress.current();
-    video.addEventListener("pause", onPause);
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => {
-      video.removeEventListener("pause", onPause);
-      window.removeEventListener("beforeunload", onBeforeUnload);
-    };
-  }, [viewerId, movieSlug, videoReady]);
-
-  const onSneakPeekCtaClick = () => {
+  const onWatchButtonClick = () => {
     setHasClickedWatch(true);
-    if (videoRef.current) {
-      const seekTo =
-        typeof sneakPeekCtaSeekToSeconds === "number"
-          ? sneakPeekCtaSeekToSeconds
-          : 0;
-      videoRef.current.currentTime = seekTo;
-      videoRef.current.play().catch(() => {});
-    }
+    videoRef.current?.play().catch(() => {});
   };
 
   const toggleSubtitles = () => {
@@ -546,7 +432,6 @@ export function MovieOfTheWeek({
         <video
           ref={videoRef}
           controls
-          autoPlay
           preload="metadata"
           poster={videoReady ? posterUrl : undefined}
           className="netflix-player absolute inset-0 h-full w-full object-cover"
@@ -574,28 +459,19 @@ export function MovieOfTheWeek({
             />
           ))}
         </video>
-        {hasSneakPeek && !hasClickedWatch && letsGoLabel && (
+        {hasWatchButton && !hasClickedWatch && letsGoLabel && (
           <div
             className={`absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-500 ${
               sneakPeekButtonRevealed ? "opacity-100" : "opacity-0 pointer-events-none"
             }`}
           >
-            {typeof sneakPeekCtaSeekToSeconds === "number" ? (
-              <button
-                type="button"
-                onClick={onSneakPeekCtaClick}
-                className="cursor-pointer rounded-xl border-0 bg-white px-8 py-4 text-4xl font-bold text-black shadow-lg outline-none transition hover:scale-105 hover:bg-zinc-100 sm:text-5xl md:text-6xl"
-              >
-                {letsGoLabel}
-              </button>
-            ) : (
-              <a
-                href="/"
-                className="cursor-pointer rounded-xl border-0 bg-white px-8 py-4 text-4xl font-bold text-black no-underline shadow-lg outline-none transition hover:scale-105 hover:bg-zinc-100 sm:text-5xl md:text-6xl"
-              >
-                {letsGoLabel}
-              </a>
-            )}
+            <button
+              type="button"
+              onClick={onWatchButtonClick}
+              className="cursor-pointer rounded-xl border-0 bg-white px-8 py-4 text-4xl font-bold text-black shadow-lg outline-none transition hover:scale-105 hover:bg-zinc-100 sm:text-5xl md:text-6xl"
+            >
+              {letsGoLabel}
+            </button>
           </div>
         )}
       </div>

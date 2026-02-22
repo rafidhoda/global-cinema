@@ -34,7 +34,7 @@ export function MoviePageClient({
   const [isAdmin, setIsAdmin] = useState(false);
   const [userNativeLanguageSlug, setUserNativeLanguageSlug] = useState<string | null>(null);
   const [backLabel, setBackLabel] = useState("Back to movies");
-  const [letsGoLabel, setLetsGoLabel] = useState("Let's go!");
+  const [watchButtonLabel, setWatchButtonLabel] = useState("Watch video");
   const [loadingMovieMessage, setLoadingMovieMessage] = useState("Loading movie… get the popcorn!");
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
 
@@ -50,7 +50,9 @@ export function MoviePageClient({
     const stored = localStorage.getItem(NATIVE_LANGUAGE_KEY) || "";
     const langCode = nativeLanguageToCode(stored);
     const ui = getUiStrings(langCode);
-    setLetsGoLabel(ui.letsGo);
+    setWatchButtonLabel(
+      typeof sneakPeekCtaSeekToSeconds === "number" ? ui.watchVideo : ui.letsGo
+    );
     setLoadingMovieMessage(ui.loadingMovie);
     if (admin) {
       setBackLabel("Back to movies");
@@ -59,7 +61,7 @@ export function MoviePageClient({
       setUserNativeLanguageSlug(nativeLanguageToSubtitleSlug(stored));
       setBackLabel(ui.backToMovies);
     }
-  }, [mounted]);
+  }, [mounted, sneakPeekCtaSeekToSeconds]);
 
   useEffect(() => {
     if (!mounted || !movieSlug) return;
@@ -92,7 +94,7 @@ export function MoviePageClient({
         sneakPeekStartSeconds={sneakPeekStartSeconds}
         sneakPeekEndSeconds={sneakPeekEndSeconds}
         sneakPeekCtaSeekToSeconds={sneakPeekCtaSeekToSeconds}
-        letsGoLabel={letsGoLabel}
+        letsGoLabel={watchButtonLabel}
         loadingMovieMessage={loadingMovieMessage}
       />
     </div>
