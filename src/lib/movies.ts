@@ -13,6 +13,11 @@ export type Movie = {
   subtitleUrl?: string;
   /** Raw English SRT URL for "Create Subtitles" and resume */
   englishSrtUrl?: string;
+  /** Sneak peek: show "Let's go!" CTA while playback is within this range (seconds). */
+  sneakPeekStartSeconds?: number;
+  sneakPeekEndSeconds?: number;
+  /** When user clicks "Let's go!" during sneak peek, seek video to this time (seconds). e.g. 121 = 2:01 */
+  sneakPeekCtaSeekToSeconds?: number;
 };
 
 const TZP_ENGLISH_SRT =
@@ -30,6 +35,9 @@ export const MOVIES: Movie[] = [
       "https://ytsbpnzahbtxpojtsjfh.supabase.co/storage/v1/object/public/movies/Taare%20Zameen%20Par%20(2007).mp4",
     englishSrtUrl: TZP_ENGLISH_SRT,
     subtitleUrl: `/api/subtitles/vtt?url=${encodeURIComponent(TZP_ENGLISH_SRT)}`,
+    sneakPeekStartSeconds: 6560,
+    sneakPeekEndSeconds: 6620,
+    sneakPeekCtaSeekToSeconds: 0,
   },
   {
     slug: "padman-2018",

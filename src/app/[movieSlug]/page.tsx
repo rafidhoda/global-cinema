@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getMovie } from "@/lib/movies";
-import { MovieOfTheWeek } from "@/components/MovieOfTheWeek";
+import { MoviePageClient } from "@/components/MoviePageClient";
 
 type Props = { params: Promise<{ movieSlug: string }> };
 
@@ -22,22 +22,15 @@ export default async function MoviePage({ params }: Props) {
     );
   }
   return (
-    <div className="min-h-screen bg-black">
-      <div className="mx-auto max-w-6xl px-4 pt-4">
-        <Link
-          href="/"
-          className="cursor-pointer text-sm text-zinc-500 hover:text-white"
-        >
-          ← Back to movies
-        </Link>
-      </div>
-      <MovieOfTheWeek
-        movieSlug={movieSlug}
-        videoUrl={movie.videoUrl}
-        subtitleUrl={movie.subtitleUrl}
-        englishSrtUrl={movie.englishSrtUrl}
-        headline={`${movie.title} (${movie.year})`}
-      />
-    </div>
+    <MoviePageClient
+      movieSlug={movieSlug}
+      videoUrl={movie.videoUrl}
+      subtitleUrl={movie.subtitleUrl}
+      englishSrtUrl={movie.englishSrtUrl}
+      headline={`${movie.title} (${movie.year})`}
+      sneakPeekStartSeconds={movie.sneakPeekStartSeconds}
+      sneakPeekEndSeconds={movie.sneakPeekEndSeconds}
+      sneakPeekCtaSeekToSeconds={movie.sneakPeekCtaSeekToSeconds}
+    />
   );
 }
