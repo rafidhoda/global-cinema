@@ -35,6 +35,8 @@ export function MoviePageClient({
   const [userNativeLanguageSlug, setUserNativeLanguageSlug] = useState<string | null>(null);
   const [backLabel, setBackLabel] = useState("Back to movies");
   const [watchButtonLabel, setWatchButtonLabel] = useState("Watch video");
+  const [downloadSubtitlesLabel, setDownloadSubtitlesLabel] = useState("Download subtitles");
+  const [downloadSrtUrl, setDownloadSrtUrl] = useState<string | null>(null);
   const [loadingMovieMessage, setLoadingMovieMessage] = useState("Loading movie… get the popcorn!");
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
 
@@ -53,6 +55,7 @@ export function MoviePageClient({
     setWatchButtonLabel(
       typeof sneakPeekCtaSeekToSeconds === "number" ? ui.watchVideo : ui.letsGo
     );
+    setDownloadSubtitlesLabel(ui.downloadSubtitles);
     setLoadingMovieMessage(ui.loadingMovie);
     if (admin) {
       setBackLabel("Back to movies");
@@ -74,14 +77,48 @@ export function MoviePageClient({
       .catch(() => {});
   }, [mounted, movieSlug]);
 
+  // Resolve download URL: user's native language SRT if available, else English
+  useEffect(() => {
+    if (!mounted || !movieSlug) return;
+    if (!englishSrtUrl) {
+      setDownloadSrtUrl(null);
+      return;
+    }
+    fetch(
+      `/api/subtitles/movie-of-the-week-list?movieSlug=${encodeURIComponent(movieSlug)}`
+    )
+      .then((res) => (res.ok ? res.json() : { languages: [] }))
+      .then((data) => {
+        const languages = data?.languages ?? [];
+        const nativeUrl =
+          userNativeLanguageSlug &&
+          languages.find(
+            (l: { slug: string }) => l.slug === userNativeLanguageSlug
+          )?.url;
+        setDownloadSrtUrl(nativeUrl || englishSrtUrl || null);
+      })
+      .catch(() => setDownloadSrtUrl(englishSrtUrl));
+  }, [mounted, movieSlug, englishSrtUrl, userNativeLanguageSlug]);
+
   return (
     <div className="fixed inset-0 z-0 bg-black">
-      <Link
-        href="/"
-        className="absolute left-4 top-4 z-30 cursor-pointer rounded-lg bg-black/50 px-3 py-2 text-sm text-white backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
-      >
-        ← {backLabel}
-      </Link>
+      <div className="absolute left-4 right-4 top-4 z-30 flex flex-wrap items-center justify-between gap-2">
+        <Link
+          href="/"
+          className="cursor-pointer rounded-lg bg-black/50 px-3 py-2 text-sm text-white backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
+        >
+          ← {backLabel}
+        </Link>
+        {downloadSrtUrl && (
+          <a
+            href={downloadSrtUrl}
+            download="subtitles.srt"
+            className="cursor-pointer rounded-lg bg-black/50 px-3 py-2 text-sm text-white backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
+          >
+            {downloadSubtitlesLabel}
+          </a>
+        )}
+      </div>
       <MovieOfTheWeek
         movieSlug={movieSlug}
         videoUrl={videoUrl}
