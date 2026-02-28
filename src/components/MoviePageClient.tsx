@@ -149,15 +149,27 @@ export function MoviePageClient({
         >
           ← {backLabel}
         </Link>
-        {downloadSrtUrl && (
-          <a
-            href={downloadSrtUrl}
-            download="subtitles.srt"
-            className="cursor-pointer rounded-lg bg-black/50 px-3 py-2 text-sm text-white backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
-          >
-            {downloadSubtitlesLabel}
-          </a>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {movieSlug === "taare-zameen-par-2007" && (
+            <a
+              href="https://wormhole.app/vbZ1bn#Hv21O3mfIQYMo39TTkzKrQ"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="cursor-pointer rounded-lg bg-black/50 px-3 py-2 text-sm text-white backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
+            >
+              Wormhole
+            </a>
+          )}
+          {downloadSrtUrl && (
+            <a
+              href={downloadSrtUrl}
+              download="subtitles.srt"
+              className="cursor-pointer rounded-lg bg-black/50 px-3 py-2 text-sm text-white backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
+            >
+              {downloadSubtitlesLabel}
+            </a>
+          )}
+        </div>
       </div>
       <MovieOfTheWeek
         movieSlug={movieSlug}
