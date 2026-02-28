@@ -12,8 +12,8 @@ const PASSWORD_BOLLYWOOD = "bollywood";
 
 const LANDING_LANGUAGES = [
   { name: "English", value: "English" },
-  { name: "Polish", value: "Polish" },
-  { name: "Norwegian", value: "Norwegian" },
+  { name: "Polski", value: "Polish" },
+  { name: "Norsk", value: "Norwegian" },
 ] as const;
 
 type MovieWithPoster = {

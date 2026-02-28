@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { parseSrt } from "@/lib/srt";
 import {
   WormholeTutorial,
@@ -111,6 +111,7 @@ export function MovieOfTheWeek({
   const [availableLanguages, setAvailableLanguages] = useState<AvailableLang[]>([]);
   const [activeSubtitle, setActiveSubtitle] = useState<"en" | string | null>(null);
   const [overlayCueText, setOverlayCueText] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [expectedCueCount, setExpectedCueCount] = useState<number | null>(null);
   const hasAutoSelectedRef = useRef(false);
   const [sneakPeekButtonRevealed, setSneakPeekButtonRevealed] = useState(false);
@@ -276,6 +277,35 @@ export function MovieOfTheWeek({
       activeTrackRef.current = null;
     };
   }, [activeSubtitle]);
+
+  // In fullscreen, use native track "showing" so browser draws subtitles; outside fullscreen use "hidden" + our overlay
+  const getActiveTrack = useCallback((video: HTMLVideoElement | null) => {
+    if (!video?.textTracks || activeSubtitle == null) return null;
+    return (
+      Array.from(video.textTracks).find(
+        (t) =>
+          (activeSubtitle === "en" && (t.label === "English" || t.language === "en")) ||
+          (activeSubtitle !== "en" && (t.language === activeSubtitle || t.label.toLowerCase() === activeSubtitle))
+      ) ?? null
+    );
+  }, [activeSubtitle]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const video = videoRef.current;
+      const fs = document.fullscreenElement;
+      const inFullscreen = Boolean(
+        fs && video && (fs === video || fs.contains(video))
+      );
+      setIsFullscreen(inFullscreen);
+      const track = getActiveTrack(video ?? null);
+      if (track) {
+        track.mode = inFullscreen ? "showing" : "hidden";
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, [getActiveTrack]);
 
   // Reveal Watch button after a short delay
   useEffect(() => {
@@ -637,8 +667,8 @@ export function MovieOfTheWeek({
             />
           ))}
         </video>
-        {/* Custom subtitle overlay: 200px breathing room below text (native ::cue cannot be positioned) */}
-        {overlayCueText && (
+        {/* Custom subtitle overlay when not fullscreen; in fullscreen we use native track "showing" so player shows subtitles */}
+        {overlayCueText && !isFullscreen && (
           <div
             className="netflix-subtitle-overlay pointer-events-none absolute left-0 right-0 z-[5] flex justify-center px-4"
             style={{ bottom: "100px" }}
