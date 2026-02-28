@@ -10,7 +10,11 @@ const NATIVE_LANGUAGE_KEY = "global-cinema-native-language";
 const PASSWORD_ADMIN = "hoda";
 const PASSWORD_BOLLYWOOD = "bollywood";
 
-type OnboardingStep = "password" | "firstName" | "nativeLanguage";
+const LANDING_LANGUAGES = [
+  { name: "English", value: "English" },
+  { name: "Polish", value: "Polish" },
+  { name: "Norwegian", value: "Norwegian" },
+] as const;
 
 type MovieWithPoster = {
   slug: string;
@@ -23,11 +27,6 @@ type MovieWithPoster = {
 
 export function HomeGate() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [step, setStep] = useState<OnboardingStep>("password");
-  const [password, setPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [nativeLanguage, setNativeLanguage] = useState("");
-  const [error, setError] = useState("");
   const [movies, setMovies] = useState<MovieWithPoster[]>([]);
   const [moviesLoading, setMoviesLoading] = useState(false);
 
@@ -60,69 +59,18 @@ export function HomeGate() {
       .finally(() => setMoviesLoading(false));
   }, [authed]);
 
-  const submitPassword = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      setError("");
-      const p = password.trim();
-      if (p === PASSWORD_ADMIN) {
-        localStorage.setItem(AUTH_KEY, PASSWORD_ADMIN);
-        setAuthed(true);
-        setPassword("");
-      } else if (p === PASSWORD_BOLLYWOOD) {
-        setStep("firstName");
-        setPassword("");
-      } else {
-        setError("Wrong password");
-      }
-    },
-    [password]
-  );
-
-  const submitFirstName = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      setError("");
-      const name = firstName.trim();
-      if (name) {
-        setStep("nativeLanguage");
-      } else {
-        setError("Please enter your first name");
-      }
-    },
-    [firstName]
-  );
-
-  const submitNativeLanguage = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      setError("");
-      const lang = nativeLanguage.trim();
-      const name = firstName.trim();
-      if (lang) {
-        localStorage.setItem(AUTH_KEY, PASSWORD_BOLLYWOOD);
-        localStorage.setItem(FIRST_NAME_KEY, name);
-        localStorage.setItem(NATIVE_LANGUAGE_KEY, lang);
-        setAuthed(true);
-        // Save to Supabase (fire-and-forget)
-        fetch("/api/onboarding", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ first_name: name, native_language: lang }),
-        }).catch(() => {});
-      } else {
-        setError("Please enter your native language");
-      }
-    },
-    [nativeLanguage, firstName]
-  );
+  const pickLanguage = useCallback((value: string) => {
+    localStorage.setItem(AUTH_KEY, PASSWORD_BOLLYWOOD);
+    localStorage.setItem(FIRST_NAME_KEY, "Guest");
+    localStorage.setItem(NATIVE_LANGUAGE_KEY, value);
+    setAuthed(true);
+  }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(AUTH_KEY);
     localStorage.removeItem(FIRST_NAME_KEY);
     localStorage.removeItem(NATIVE_LANGUAGE_KEY);
     setAuthed(false);
-    setStep("password");
   }, []);
 
   if (authed === null) {
@@ -134,90 +82,23 @@ export function HomeGate() {
   }
 
   if (!authed) {
-    const renderForm = () => {
-      const inputClass =
-        "min-w-0 flex-1 rounded-xl border border-zinc-700 bg-zinc-800 px-6 py-5 text-lg text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500 sm:px-8 sm:py-6 sm:text-xl";
-      const btnClass =
-        "cursor-pointer rounded-xl bg-amber-500 px-5 py-5 text-2xl transition hover:bg-amber-400 sm:px-6 sm:py-6 sm:text-3xl";
-
-      if (step === "password") {
-        return (
-          <form
-            onSubmit={submitPassword}
-            className="flex w-full max-w-2xl flex-shrink-0 items-stretch gap-2 sm:gap-3"
-          >
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="What is the secret password?"
-              className={inputClass}
-              autoFocus
-            />
-            <button type="submit" className={btnClass} title="Enter" aria-label="Enter">
-              🍿
-            </button>
-          </form>
-        );
-      }
-      if (step === "firstName") {
-        return (
-          <div className="flex w-full max-w-2xl flex-col items-stretch gap-4">
-            <p className="text-center text-lg text-white sm:text-xl">
-              What is your first name?
-            </p>
-            <form
-              onSubmit={submitFirstName}
-              className="flex flex-shrink-0 items-stretch gap-2 sm:gap-3"
-            >
-              <input
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                placeholder="First name"
-                className={inputClass}
-                autoFocus
-                autoComplete="given-name"
-              />
-              <button type="submit" className={btnClass} title="Enter" aria-label="Enter">
-                🍿
-              </button>
-            </form>
-          </div>
-        );
-      }
-      return (
-        <div className="flex w-full max-w-2xl flex-col items-stretch gap-4">
-          <p className="text-center text-lg text-white sm:text-xl">
-            What is your native language?
-          </p>
-          <form
-            onSubmit={submitNativeLanguage}
-            className="flex flex-shrink-0 items-stretch gap-2 sm:gap-3"
-          >
-            <input
-              type="text"
-              value={nativeLanguage}
-              onChange={(e) => setNativeLanguage(e.target.value)}
-              placeholder="Language"
-              className={inputClass}
-              autoFocus
-              autoComplete="language"
-            />
-            <button type="submit" className={btnClass} title="Enter" aria-label="Enter">
-              🍿
-            </button>
-          </form>
-        </div>
-      );
-    };
-
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-black px-4">
-        {renderForm()}
-        {error && (
-          <p className="text-center text-sm text-rose-400">{error}</p>
-        )}
+      <div className="flex min-h-screen flex-col items-center justify-center gap-12 bg-black px-6">
+        <h1 className="text-center text-4xl font-semibold tracking-tight text-white sm:text-5xl md:text-6xl">
+          Global Cinema
+        </h1>
+        <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:gap-6">
+          {LANDING_LANGUAGES.map(({ name, value }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => pickLanguage(value)}
+              className="cursor-pointer rounded-2xl bg-amber-500 px-10 py-6 text-2xl font-medium text-black shadow-lg transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 focus:ring-offset-black sm:px-12 sm:py-8 sm:text-3xl"
+            >
+              {name}
+            </button>
+          ))}
+        </div>
       </div>
     );
   }

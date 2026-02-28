@@ -24,9 +24,10 @@ function srtToVtt(srt: string): string {
       if (i >= lines.length) break;
     }
     const timeLine = lines[i];
-    // SRT timestamp: 00:00:10,196 --> 00:02:10,893  →  VTT: 00:00:10.196 --> 00:02:10.893
+    // SRT timestamp: 00:00:10,196 --> 00:02:10,893  →  VTT: 00:00:10.196 --> 00:02:10.893 line:85%
+    // line:85% positions cues so there is ~15% breathing room below (::cue does not support transform/position in browsers)
     if (timeLine && /^\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}/.test(timeLine)) {
-      out.push(timeLine.replace(/,/g, "."));
+      out.push(timeLine.replace(/,/g, ".") + " line:85%");
       i++;
       while (i < lines.length && lines[i].trim() !== "") {
         out.push(lines[i]);

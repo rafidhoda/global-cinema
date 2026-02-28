@@ -110,6 +110,7 @@ export function MovieOfTheWeek({
   const [createdLangUrl, setCreatedLangUrl] = useState<string | null>(null);
   const [availableLanguages, setAvailableLanguages] = useState<AvailableLang[]>([]);
   const [activeSubtitle, setActiveSubtitle] = useState<"en" | string | null>(null);
+  const [overlayCueText, setOverlayCueText] = useState("");
   const [expectedCueCount, setExpectedCueCount] = useState<number | null>(null);
   const hasAutoSelectedRef = useRef(false);
   const [sneakPeekButtonRevealed, setSneakPeekButtonRevealed] = useState(false);
@@ -216,7 +217,7 @@ export function MovieOfTheWeek({
         const matches = list.filter((t) => t.label === match.label);
         const trackToShow = matches.length > 0 ? matches[matches.length - 1] : null;
         if (trackToShow) {
-          trackToShow.mode = "showing";
+          trackToShow.mode = "hidden";
           setActiveSubtitle(match.slug);
           setSubtitlesOn(true);
         }
@@ -227,13 +228,54 @@ export function MovieOfTheWeek({
         const list = Array.from(videoRef.current?.textTracks ?? []);
         list.forEach((t) => { t.mode = "disabled"; });
         if (list[0]) {
-          list[0].mode = "showing";
+          list[0].mode = "hidden";
           setActiveSubtitle("en");
           setSubtitlesOn(true);
         }
       });
     }
   }, [isAdmin, userNativeLanguageSlug, availableLanguages, subtitleUrl]);
+
+  // Sync overlay text from active track (we use "hidden" track + custom overlay for 200px bottom spacing)
+  const activeTrackRef = useRef<TextTrack | null>(null);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video?.textTracks || activeSubtitle == null) {
+      setOverlayCueText("");
+      activeTrackRef.current = null;
+      return;
+    }
+    const list = Array.from(video.textTracks);
+    const track = list.find(
+      (t) =>
+        (activeSubtitle === "en" && (t.label === "English" || t.language === "en")) ||
+        (activeSubtitle !== "en" && (t.language === activeSubtitle || t.label.toLowerCase() === activeSubtitle))
+    ) ?? null;
+    if (!track) {
+      setOverlayCueText("");
+      activeTrackRef.current = null;
+      return;
+    }
+    activeTrackRef.current = track;
+    const onCueChange = () => {
+      const cues = track.activeCues;
+      if (!cues || cues.length === 0) {
+        setOverlayCueText("");
+        return;
+      }
+      const text = Array.from(cues)
+        .map((c) => (c as VTTCue).text)
+        .join("\n");
+      setOverlayCueText(text);
+    };
+    onCueChange();
+    track.addEventListener("cuechange", onCueChange);
+    return () => {
+      track.removeEventListener("cuechange", onCueChange);
+      setOverlayCueText("");
+      activeTrackRef.current = null;
+    };
+  }, [activeSubtitle]);
 
   // Reveal Watch button after a short delay
   useEffect(() => {
@@ -274,13 +316,13 @@ export function MovieOfTheWeek({
     const video = videoRef.current;
     if (!video?.textTracks?.length) return;
     const track = video.textTracks[0];
-    if (track.mode === "showing") {
+    if (track.mode === "hidden" || track.mode === "showing") {
       track.mode = "disabled";
       setSubtitlesOn(false);
       setActiveSubtitle(null);
     } else {
       for (const t of video.textTracks) t.mode = "disabled";
-      track.mode = "showing";
+      track.mode = "hidden";
       setSubtitlesOn(true);
       setActiveSubtitle("en");
     }
@@ -297,19 +339,16 @@ export function MovieOfTheWeek({
     } else {
       const list = Array.from(video.textTracks);
       list.forEach((t) => { t.mode = "disabled"; });
-      // Explicitly ensure English (index 0) is off when selecting another language
       if (list.length > 0 && list[0].label === "English") list[0].mode = "disabled";
-      // Prefer last matching track (DOM <track> is usually the full file; programmatic can be partial)
       const matches = list.filter((t) => t.label === lang.label);
       const trackToShow = matches.length > 0 ? matches[matches.length - 1] : null;
       if (trackToShow) {
-        trackToShow.mode = "showing";
-        // Safari/iOS sometimes only updates subtitle display after a tick
+        trackToShow.mode = "hidden";
         if (typeof requestAnimationFrame !== "undefined") {
           requestAnimationFrame(() => {
             list.forEach((t) => { t.mode = "disabled"; });
             if (list[0].label === "English") list[0].mode = "disabled";
-            trackToShow.mode = "showing";
+            trackToShow.mode = "hidden";
           });
         }
       }
@@ -350,7 +389,7 @@ export function MovieOfTheWeek({
     }
 
     const track = videoRef.current.addTextTrack("subtitles", lang.label, lang.slug);
-    track.mode = "showing";
+    track.mode = "hidden";
     createdTrackRef.current = track;
 
     try {
@@ -598,6 +637,17 @@ export function MovieOfTheWeek({
             />
           ))}
         </video>
+        {/* Custom subtitle overlay: 200px breathing room below text (native ::cue cannot be positioned) */}
+        {overlayCueText && (
+          <div
+            className="netflix-subtitle-overlay pointer-events-none absolute left-0 right-0 z-[5] flex justify-center px-4"
+            style={{ bottom: "100px" }}
+          >
+            <p className="max-w-4xl text-center text-3xl font-bold leading-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)] [text-shadow:0_0_4px_#000,0_0_8px_#000] sm:text-4xl">
+              {overlayCueText}
+            </p>
+          </div>
+        )}
         {hasWatchButton && !hasClickedWatch && letsGoLabel && (
           <div
             className={`absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-500 ${
