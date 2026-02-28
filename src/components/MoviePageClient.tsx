@@ -34,11 +34,28 @@ export function MoviePageClient({
   const [isAdmin, setIsAdmin] = useState(false);
   const [userNativeLanguageSlug, setUserNativeLanguageSlug] = useState<string | null>(null);
   const [backLabel, setBackLabel] = useState("Back to movies");
-  const [watchButtonLabel, setWatchButtonLabel] = useState("Watch video");
+  const [watchButtonLabel, setWatchButtonLabel] = useState("Watch");
+  const [uploadMovieFileLabel, setUploadMovieFileLabel] = useState("Upload movie file");
+  const [requestMovieFileLabel, setRequestMovieFileLabel] = useState("Request movie file");
+  const [downloadMovieLabel, setDownloadMovieLabel] = useState("Download movie");
+  const [downloadThenUploadLabel, setDownloadThenUploadLabel] = useState("Use the link below to download the movie, then upload it here to watch with subtitles.");
   const [downloadSubtitlesLabel, setDownloadSubtitlesLabel] = useState("Download subtitles");
   const [downloadSrtUrl, setDownloadSrtUrl] = useState<string | null>(null);
   const [loadingMovieMessage, setLoadingMovieMessage] = useState("Loading movie… get the popcorn!");
+  const [loadingFileAndSubtitlesMessage, setLoadingFileAndSubtitlesMessage] = useState("Loading your file and syncing subtitles…");
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
+  const [tutorialStrings, setTutorialStrings] = useState<{
+    tutorialTitle: string;
+    tutorialStep1: string;
+    tutorialStep2: string;
+    tutorialStep3: string;
+    tutorialStep4WithLang: (lang: string) => string;
+    tutorialNext: string;
+    tutorialDownloaded: string;
+    tutorialLocateFile: string;
+    tutorialSkip: string;
+  } | null>(null);
+  const [subtitleLanguageLabel, setSubtitleLanguageLabel] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -53,15 +70,38 @@ export function MoviePageClient({
     const langCode = nativeLanguageToCode(stored);
     const ui = getUiStrings(langCode);
     setWatchButtonLabel(
-      typeof sneakPeekCtaSeekToSeconds === "number" ? ui.watchVideo : ui.letsGo
+      typeof sneakPeekCtaSeekToSeconds === "number" ? ui.watch : ui.letsGo
     );
+    setUploadMovieFileLabel(ui.uploadMovieFile);
+    setRequestMovieFileLabel(ui.requestMovieFile);
+    setDownloadMovieLabel(ui.downloadMovie);
+    setDownloadThenUploadLabel(ui.downloadThenUpload);
     setDownloadSubtitlesLabel(ui.downloadSubtitles);
     setLoadingMovieMessage(ui.loadingMovie);
+    setLoadingFileAndSubtitlesMessage(ui.loadingFileAndSubtitles);
+    setTutorialStrings({
+      tutorialTitle: ui.tutorialTitle,
+      tutorialStep1: ui.tutorialStep1,
+      tutorialStep2: ui.tutorialStep2,
+      tutorialStep3: ui.tutorialStep3,
+      tutorialStep4WithLang: ui.tutorialStep4WithLang,
+      tutorialNext: ui.tutorialNext,
+      tutorialDownloaded: ui.tutorialDownloaded,
+      tutorialLocateFile: ui.tutorialLocateFile,
+      tutorialSkip: ui.tutorialSkip,
+    });
     if (admin) {
       setBackLabel("Back to movies");
       setUserNativeLanguageSlug(null);
+      setSubtitleLanguageLabel("English");
     } else {
-      setUserNativeLanguageSlug(nativeLanguageToSubtitleSlug(stored));
+      const slug = nativeLanguageToSubtitleSlug(stored);
+      setUserNativeLanguageSlug(slug);
+      setSubtitleLanguageLabel(
+        slug
+          ? slug.charAt(0).toUpperCase() + slug.slice(1)
+          : "English"
+      );
       setBackLabel(ui.backToMovies);
     }
   }, [mounted, sneakPeekCtaSeekToSeconds]);
@@ -132,7 +172,14 @@ export function MoviePageClient({
         sneakPeekEndSeconds={sneakPeekEndSeconds}
         sneakPeekCtaSeekToSeconds={sneakPeekCtaSeekToSeconds}
         letsGoLabel={watchButtonLabel}
+        uploadMovieFileLabel={uploadMovieFileLabel}
+        requestMovieFileLabel={requestMovieFileLabel}
+        downloadMovieLabel={downloadMovieLabel}
+        downloadThenUploadLabel={downloadThenUploadLabel}
         loadingMovieMessage={loadingMovieMessage}
+        loadingFileAndSubtitlesMessage={loadingFileAndSubtitlesMessage}
+        tutorialStrings={tutorialStrings}
+        subtitleLanguageLabel={subtitleLanguageLabel}
       />
     </div>
   );

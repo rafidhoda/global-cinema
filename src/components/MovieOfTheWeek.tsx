@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { parseSrt } from "@/lib/srt";
+import {
+  WormholeTutorial,
+  getTutorialDone,
+} from "@/components/WormholeTutorial";
 
 type AvailableLang = { label: string; slug: string; url: string; cueCount?: number };
 
@@ -22,27 +26,50 @@ const CREATE_LANGS = [
 /** Treat these as complete even if cue count disagrees (e.g. list API cache). */
 const MANUALLY_COMPLETE_SLUGS = new Set(["polish", "norwegian"]);
 
+/** Wormhole link for downloading the movie; user then uploads the file in-browser to watch. */
+const WORMHOLE_DOWNLOAD_URL = "https://wormhole.app/o43Zp9#LDulBYrW_5f1sYvKfqfHHA";
+
 type Props = {
   movieSlug: string;
-  videoUrl: string;
+  /** Not used for playback; video comes from user's local file upload. */
+  videoUrl?: string;
   subtitleUrl?: string;
   englishSrtUrl?: string;
   headline?: string;
   /** Poster/thumbnail image for the video before playback. */
   posterUrl?: string;
-  /** Sneak peek: show CTA when playback is within [start, end] seconds. */
   sneakPeekStartSeconds?: number;
   sneakPeekEndSeconds?: number;
-  /** When user clicks "Let's go!", seek video to this time (seconds). If unset, button links to /. */
+  /** Seek to this time (seconds) after file load, then show Watch button. e.g. 121 = 2:01 */
   sneakPeekCtaSeekToSeconds?: number;
-  /** CTA label during sneak peek (e.g. "Let's go!" in user's language). */
+  /** Label for the Watch button (e.g. "Watch"). */
   letsGoLabel?: string;
-  /** Shown over the video while it loads (e.g. "Loading movie… get the popcorn!" in user's language). */
+  /** Label for the upload CTA (e.g. "Upload movie file"). */
+  uploadMovieFileLabel?: string;
+  /** Label for the request-via-WhatsApp CTA (e.g. "Request movie file"). */
+  requestMovieFileLabel?: string;
+  /** Label for the Wormhole download link (e.g. "Download movie"). */
+  downloadMovieLabel?: string;
+  /** Instruction above download/upload buttons (e.g. "Use the link below..."). */
+  downloadThenUploadLabel?: string;
   loadingMovieMessage?: string;
-  /** Admin sees subtitle toggles and Create Subtitles; when false, subtitles auto-set to user's native language. */
+  /** Shown while local file loads and Supabase subtitles sync (native-language). */
+  loadingFileAndSubtitlesMessage?: string;
   isAdmin?: boolean;
-  /** When isAdmin is false, auto-select this subtitle slug (e.g. "polish"). */
   userNativeLanguageSlug?: string | null;
+  /** For TZP Wormhole tutorial (native language). */
+  tutorialStrings?: {
+    tutorialTitle: string;
+    tutorialStep1: string;
+    tutorialStep2: string;
+    tutorialStep3: string;
+    tutorialStep4WithLang: (lang: string) => string;
+    tutorialNext: string;
+    tutorialDownloaded: string;
+    tutorialLocateFile: string;
+    tutorialSkip: string;
+  } | null;
+  subtitleLanguageLabel?: string | null;
 };
 
 export function MovieOfTheWeek({
@@ -56,12 +83,20 @@ export function MovieOfTheWeek({
   sneakPeekEndSeconds,
   sneakPeekCtaSeekToSeconds,
   letsGoLabel,
+  uploadMovieFileLabel,
+  requestMovieFileLabel,
+  downloadMovieLabel,
+  downloadThenUploadLabel,
   loadingMovieMessage,
+  loadingFileAndSubtitlesMessage,
   isAdmin = true,
   userNativeLanguageSlug = null,
+  tutorialStrings = null,
+  subtitleLanguageLabel = null,
 }: Props) {
-  const hasVideo = Boolean(videoUrl?.trim());
   const videoRef = useRef<HTMLVideoElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [localVideoUrl, setLocalVideoUrl] = useState<string | null>(null);
   const createdTrackRef = useRef<TextTrack | null>(null);
   const createdCuesCountRef = useRef(0);
 
@@ -83,6 +118,44 @@ export function MovieOfTheWeek({
   const hasAppliedInitialPositionRef = useRef(false);
 
   const hasWatchButton = typeof sneakPeekCtaSeekToSeconds === "number";
+  const hasSubtitles = Boolean((subtitleUrl || englishSrtUrl)?.trim());
+
+  const [showTutorial, setShowTutorial] = useState(false);
+  const isTZP = movieSlug === "taare-zameen-par-2007";
+  const hasHostedVideo = Boolean(videoUrl?.trim());
+  useEffect(() => {
+    if (
+      isTZP &&
+      !localVideoUrl &&
+      !hasHostedVideo &&
+      tutorialStrings &&
+      subtitleLanguageLabel &&
+      !getTutorialDone()
+    ) {
+      setShowTutorial(true);
+    } else {
+      setShowTutorial(false);
+    }
+  }, [isTZP, localVideoUrl, hasHostedVideo, tutorialStrings, subtitleLanguageLabel]);
+
+  // Clean up object URL when changing file or unmounting
+  useEffect(() => {
+    return () => {
+      if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
+    };
+  }, [localVideoUrl]);
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
+    setLocalVideoUrl(URL.createObjectURL(file));
+    setVideoReady(false);
+    setHasClickedWatch(false);
+    hasAppliedInitialPositionRef.current = false;
+    setSneakPeekButtonRevealed(false);
+    e.target.value = "";
+  };
 
   useEffect(() => {
     if (!englishSrtUrl?.trim()) return;
@@ -400,11 +473,76 @@ export function MovieOfTheWeek({
     }
   };
 
-  if (!hasVideo) {
+  if (!hasSubtitles) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
-        <p className="text-center text-zinc-500">
-          Set <code className="rounded bg-zinc-800 px-2 py-1 text-zinc-400">NEXT_PUBLIC_MOVIE_OF_WEEK_VIDEO_URL</code> in .env.local to your Supabase file URL (click &quot;Get URL&quot; on the file in Storage).
+        <p className="text-center text-zinc-500">No subtitles available for this movie.</p>
+      </div>
+    );
+  }
+
+  const videoSource = localVideoUrl || (videoUrl?.trim() || null);
+
+  if (!videoSource) {
+    if (
+      isTZP &&
+      showTutorial &&
+      tutorialStrings &&
+      subtitleLanguageLabel
+    ) {
+      return (
+        <>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={onFileChange}
+          />
+          <WormholeTutorial
+            strings={tutorialStrings}
+            subtitleLanguageLabel={subtitleLanguageLabel}
+            onLocateFile={() => {
+              setShowTutorial(false);
+              fileInputRef.current?.click();
+            }}
+            onSkip={() => setShowTutorial(false)}
+          />
+        </>
+      );
+    }
+
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-6 bg-black">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="video/*"
+          className="hidden"
+          onChange={onFileChange}
+        />
+        <p className="max-w-lg text-center text-lg text-zinc-300">
+          {downloadThenUploadLabel ?? "Use the link below to download the movie, then upload it here to watch with subtitles."}
+        </p>
+        <div className="flex flex-col items-center gap-4 sm:flex-row">
+          <a
+            href={WORMHOLE_DOWNLOAD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="cursor-pointer rounded-xl border-0 bg-white px-8 py-4 text-2xl font-bold text-black shadow-lg outline-none transition hover:scale-105 hover:bg-zinc-100 sm:text-3xl md:text-4xl no-underline"
+          >
+            {downloadMovieLabel ?? "Download movie"}
+          </a>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="cursor-pointer rounded-xl border-0 bg-white px-8 py-4 text-2xl font-bold text-black shadow-lg outline-none transition hover:scale-105 hover:bg-zinc-100 sm:text-3xl md:text-4xl"
+          >
+            {uploadMovieFileLabel ?? "Upload movie file"}
+          </button>
+        </div>
+        <p className="text-center text-zinc-400">
+          {headline} — subtitles will play with your file
         </p>
       </div>
     );
@@ -413,22 +551,23 @@ export function MovieOfTheWeek({
   return (
     <div className="fixed inset-0 flex flex-col bg-black">
       <div className="relative flex-1 min-h-0">
-        {!videoReady && loadingMovieMessage && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-zinc-950">
-            <div className="flex gap-1">
+        {!videoReady && (loadingFileAndSubtitlesMessage ?? loadingMovieMessage) && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-8 bg-black">
+            <div className="flex gap-2">
               {[0, 1, 2].map((i) => (
                 <div
                   key={i}
-                  className="h-3 w-3 animate-bounce rounded-full bg-amber-500"
+                  className="h-4 w-4 animate-bounce rounded-full bg-amber-500"
                   style={{ animationDelay: `${i * 0.15}s` }}
                 />
               ))}
             </div>
-            <p className="text-center text-lg text-zinc-300 sm:text-xl">
-              {loadingMovieMessage}
+            <p className="max-w-sm text-center text-xl text-zinc-300 sm:text-2xl">
+              {loadingFileAndSubtitlesMessage ?? loadingMovieMessage}
             </p>
           </div>
         )}
+        {/* Local file + Supabase WebVTT tracks: browser syncs cues to video currentTime (Netflix-style). */}
         <video
           ref={videoRef}
           controls
@@ -438,7 +577,7 @@ export function MovieOfTheWeek({
           playsInline
           onLoadedData={() => setVideoReady(true)}
         >
-          <source src={videoUrl} type="video/mp4" />
+          <source src={videoSource} type="video/mp4" />
           {subtitleUrl && (
             <track
               kind="subtitles"

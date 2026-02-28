@@ -9,7 +9,8 @@ export default async function MoviePage({ params }: Props) {
   const { movieSlug } = await params;
   const movie = getMovie(movieSlug);
   if (!movie) notFound();
-  if (!movie.videoUrl) {
+  const hasSubtitles = !!(movie.subtitleUrl || movie.englishSrtUrl);
+  if (!hasSubtitles) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-black">
         <p className="text-zinc-500">
@@ -24,7 +25,7 @@ export default async function MoviePage({ params }: Props) {
   return (
     <MoviePageClient
       movieSlug={movieSlug}
-      videoUrl={movie.videoUrl}
+      videoUrl={movie.videoUrl ?? ""}
       subtitleUrl={movie.subtitleUrl}
       englishSrtUrl={movie.englishSrtUrl}
       headline={`${movie.title} (${movie.year})`}
