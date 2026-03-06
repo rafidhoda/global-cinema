@@ -1,24 +1,29 @@
 /**
- * Add movies here to show a poster on the home grid and a watch page at /[slug].
- * Posters are fetched from TMDB (using TMDB_API_KEY or TMDB_READ_TOKEN). Add videoUrl + subtitle URLs for the player page.
+ * Movies shown on home and movie pages. No video streaming; download via Wormhole + subtitle downloads.
  */
 export type Movie = {
   slug: string;
   title: string;
   year: number;
-  /** Filled by API from TMDB; optional in config */
-  posterUrl?: string;
-  videoUrl?: string;
-  /** WebVTT URL for English (e.g. /api/subtitles/vtt?url=...) */
-  subtitleUrl?: string;
-  /** Raw English SRT URL for "Create Subtitles" and resume */
+  /** Wormhole (or other) link to download the movie file */
+  wormholeDownloadUrl: string;
+  /** Raw English SRT URL for downloads and for "Translate subtitles" */
   englishSrtUrl?: string;
-  /** Sneak peek: show "Let's go!" CTA while playback is within this range (seconds). */
-  sneakPeekStartSeconds?: number;
-  sneakPeekEndSeconds?: number;
-  /** When user clicks "Let's go!" during sneak peek, seek video to this time (seconds). e.g. 121 = 2:01 */
-  sneakPeekCtaSeekToSeconds?: number;
+  /** WebVTT URL for English (if you add a player later) */
+  subtitleUrl?: string;
 };
+
+/** Subtitle languages offered per movie: English first, then these for download/translate. */
+export const SUBTITLE_LANGUAGES = [
+  { label: "English", slug: "english" },
+  { label: "Norwegian", slug: "norwegian" },
+  { label: "Polish", slug: "polish" },
+  { label: "Arabic", slug: "arabic" },
+  { label: "Lithuanian", slug: "lithuanian" },
+  { label: "Russian", slug: "russian" },
+  { label: "Persian", slug: "persian" },
+  { label: "Bangla", slug: "bengali" },
+] as const;
 
 const TZP_ENGLISH_SRT =
   "https://ytsbpnzahbtxpojtsjfh.supabase.co/storage/v1/object/public/movies/Taare%20Zameen%20Par%20(2007)%20-%20English.srt";
@@ -31,22 +36,25 @@ export const MOVIES: Movie[] = [
     slug: "taare-zameen-par-2007",
     title: "Taare Zameen Par",
     year: 2007,
-    videoUrl:
-      "https://ytsbpnzahbtxpojtsjfh.supabase.co/storage/v1/object/public/movies/Taare%20Zameen%20Par%20(2007).mp4",
+    wormholeDownloadUrl: "https://wormhole.app/vbZ1bn#Hv21O3mfIQYMo39TTkzKrQ",
     englishSrtUrl: TZP_ENGLISH_SRT,
     subtitleUrl: `/api/subtitles/vtt?url=${encodeURIComponent(TZP_ENGLISH_SRT)}`,
-    sneakPeekStartSeconds: 6560,
-    sneakPeekEndSeconds: 6620,
-    sneakPeekCtaSeekToSeconds: 121,
   },
   {
     slug: "padman-2018",
-    title: "Padman",
+    title: "Pad Man",
     year: 2018,
-    videoUrl:
-      "https://ytsbpnzahbtxpojtsjfh.supabase.co/storage/v1/object/public/movies/Padman%20(2018).mp4",
+    wormholeDownloadUrl: "https://wormhole.app/",
     englishSrtUrl: PADMAN_ENGLISH_SRT,
     subtitleUrl: `/api/subtitles/vtt?url=${encodeURIComponent(PADMAN_ENGLISH_SRT)}`,
+  },
+  {
+    slug: "lagaan-2001",
+    title: "Lagaan",
+    year: 2001,
+    wormholeDownloadUrl: "https://wormhole.app/",
+    englishSrtUrl: undefined,
+    subtitleUrl: undefined,
   },
 ];
 
